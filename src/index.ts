@@ -23,6 +23,33 @@ export type {
   VesselShape
 } from "./paperfold.js";
 
+export {
+  PAPERFOLD_SCENE_PROTOCOL,
+  applyScenePatch,
+  assertScenePatch,
+  canonicalizeScene,
+  composeScenePatches,
+  diffScenes,
+  invertScenePatch,
+  parseScenePatch,
+  validateScenePatch
+} from "./scenes.js";
+
+export type {
+  AddRelationEntry,
+  DeclareKindEntry,
+  DeleteBodyEntry,
+  DeleteKindEntry,
+  InsertBodyEntry,
+  RemoveRelationEntry,
+  SceneEntry,
+  SceneKernelEntry,
+  ScenePatchDocument,
+  ScenePatchEntry
+} from "./scenes.js";
+
+export type { BodyName, KindDeclaration, KindId, Relation, Scene, SceneAddress } from "paperchain";
+
 export { formatProtocolErrors } from "paperdoll";
 
 export type {

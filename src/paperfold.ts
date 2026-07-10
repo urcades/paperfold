@@ -164,7 +164,7 @@ export function validatePatch(input: unknown): ProtocolError[] {
   return errors;
 }
 
-function validateEntry(input: unknown, path: string, errors: ProtocolError[]): void {
+export function validateEntry(input: unknown, path: string, errors: ProtocolError[]): void {
   if (!isRecord(input)) {
     errors.push({ path, message: "Patch entry must be an object." });
     return;
@@ -370,7 +370,7 @@ export function applyPatch(body: Body, document: PaperfoldDocument): Result<Body
   return { ok: true, value: canonicalizeBody(current) };
 }
 
-function applyEntry(body: Body, entry: PatchEntry, path: string): Result<Body, ProtocolError[]> {
+export function applyEntry(body: Body, entry: PatchEntry, path: string): Result<Body, ProtocolError[]> {
   switch (entry.op) {
     case "connect": {
       const { body: next, displaced } = connect(body, entry.from, entry.to);
@@ -482,7 +482,7 @@ export function invertPatch(document: PaperfoldDocument): PaperfoldDocument {
   return { protocol: PAPERFOLD_PROTOCOL, patch: inverted };
 }
 
-function invertEntry(entry: PatchEntry): PatchEntry[] {
+export function invertEntry(entry: PatchEntry): PatchEntry[] {
   switch (entry.op) {
     case "connect": {
       // Undo the created connection, then restore each displaced connection.
@@ -745,7 +745,7 @@ function canonicalizeVessel(vessel: Vessel): Vessel {
   return next;
 }
 
-function canonicalizeElement(element: ContainedElement): ContainedElement {
+export function canonicalizeElement(element: ContainedElement): ContainedElement {
   const next: ContainedElement = { kind: element.kind };
   if (element.type !== undefined) next.type = element.type;
   if (element.id !== undefined) next.id = element.id;
@@ -792,7 +792,7 @@ function elementsEqual(a: ContainedElement, b: ContainedElement): boolean {
   return jsonEqual(canonicalizeElement(a), canonicalizeElement(b));
 }
 
-function jsonEqual(a: unknown, b: unknown): boolean {
+export function jsonEqual(a: unknown, b: unknown): boolean {
   if (a === b) return true;
   if (Array.isArray(a) && Array.isArray(b)) {
     return a.length === b.length && a.every((item, index) => jsonEqual(item, b[index]));
