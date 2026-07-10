@@ -9,9 +9,15 @@ import {
   formatProtocolErrors,
   insertElement,
   insertVessel,
+  isId,
   moveElement,
   removeElement,
-  validateDocument
+  validateAcceptToken,
+  validateConnection,
+  validateContainedElement,
+  validateDocument,
+  validateEndpoint,
+  validateKnownKeys
 } from "paperdoll";
 import type {
   Body,
@@ -115,7 +121,6 @@ const OPS = [
 ] as const;
 
 const SIDE_SET = new Set<string>(SIDES);
-const ID_PATTERN = /^[a-z][a-z0-9-]*$/;
 
 // Parsing and validation
 
@@ -203,21 +208,21 @@ function validateEntry(input: unknown, path: string, errors: ProtocolError[]): v
     case "insertElement":
       validateKnownKeys(input, ["op", "vesselId", "element", "index"], path, errors);
       validateVesselId(input.vesselId, `${path}.vesselId`, errors);
-      validateElement(input.element, `${path}.element`, errors);
+      validateContainedElement(input.element, `${path}.element`, errors);
       validateIndex(input.index, `${path}.index`, errors);
       return;
     case "removeElement":
       validateKnownKeys(input, ["op", "vesselId", "index", "element"], path, errors);
       validateVesselId(input.vesselId, `${path}.vesselId`, errors);
       validateIndex(input.index, `${path}.index`, errors);
-      validateElement(input.element, `${path}.element`, errors);
+      validateContainedElement(input.element, `${path}.element`, errors);
       return;
     case "moveElement":
       validateKnownKeys(input, ["op", "from", "index", "to", "element", "toIndex"], path, errors);
       validateVesselId(input.from, `${path}.from`, errors);
       validateIndex(input.index, `${path}.index`, errors);
       validateVesselId(input.to, `${path}.to`, errors);
-      validateElement(input.element, `${path}.element`, errors);
+      validateContainedElement(input.element, `${path}.element`, errors);
       validateIndex(input.toIndex, `${path}.toIndex`, errors);
       return;
     default:
@@ -226,30 +231,6 @@ function validateEntry(input: unknown, path: string, errors: ProtocolError[]): v
         message: `Unknown op ${JSON.stringify(input.op)}. Expected one of ${OPS.join(", ")}.`
       });
   }
-}
-
-function validateEndpoint(input: unknown, path: string, errors: ProtocolError[]): void {
-  if (!isRecord(input)) {
-    errors.push({ path, message: "Endpoint must be an object with vessel and side." });
-    return;
-  }
-  validateKnownKeys(input, ["vessel", "side"], path, errors);
-  if (!isId(input.vessel)) {
-    errors.push({ path: `${path}.vessel`, message: "Endpoint vessel must be a valid vessel id." });
-  }
-  if (!isSide(input.side)) {
-    errors.push({ path: `${path}.side`, message: "Endpoint side must be top, right, bottom, or left." });
-  }
-}
-
-function validateConnection(input: unknown, path: string, errors: ProtocolError[]): void {
-  if (!isRecord(input)) {
-    errors.push({ path, message: "Connection must be an object with from and to endpoints." });
-    return;
-  }
-  validateKnownKeys(input, ["from", "to"], path, errors);
-  validateEndpoint(input.from, `${path}.from`, errors);
-  validateEndpoint(input.to, `${path}.to`, errors);
 }
 
 function validateNullableConnection(input: unknown, path: string, errors: ProtocolError[]): void {
@@ -336,20 +317,7 @@ function validateAcceptTokens(input: unknown, path: string, errors: ProtocolErro
     errors.push({ path, message: "Accepts must be an array of accept token objects." });
     return;
   }
-  input.forEach((token, index) => {
-    const tokenPath = `${path}.${index}`;
-    if (!isRecord(token)) {
-      errors.push({ path: tokenPath, message: "Accept token must be an object." });
-      return;
-    }
-    validateKnownKeys(token, ["kind", "type"], tokenPath, errors);
-    if (!isId(token.kind)) {
-      errors.push({ path: `${tokenPath}.kind`, message: "Accept token kind must be a lowercase id." });
-    }
-    if (token.type !== undefined && !isId(token.type)) {
-      errors.push({ path: `${tokenPath}.type`, message: "Accept token type must be a lowercase id." });
-    }
-  });
+  input.forEach((token, index) => validateAcceptToken(token, `${path}.${index}`, errors));
 }
 
 function validateElements(input: unknown, path: string, errors: ProtocolError[]): void {
@@ -358,53 +326,12 @@ function validateElements(input: unknown, path: string, errors: ProtocolError[])
     errors.push({ path, message: "Contains must be an array of contained element objects." });
     return;
   }
-  input.forEach((element, index) => validateElement(element, `${path}.${index}`, errors));
-}
-
-function validateElement(input: unknown, path: string, errors: ProtocolError[]): void {
-  if (!isRecord(input)) {
-    errors.push({ path, message: "Contained element must be an object." });
-    return;
-  }
-  validateKnownKeys(input, ["kind", "type", "id", "data", "body"], path, errors);
-  if (!isId(input.kind)) {
-    errors.push({ path: `${path}.kind`, message: "Contained element kind must be a lowercase id." });
-  }
-  if (input.type !== undefined && !isId(input.type)) {
-    errors.push({ path: `${path}.type`, message: "Contained element type must be a lowercase id." });
-  }
-  if (input.id !== undefined && !isId(input.id)) {
-    errors.push({ path: `${path}.id`, message: "Contained element id must be a lowercase id (it is an address segment)." });
-  }
-  if (input.data !== undefined && !isJsonValue(input.data)) {
-    errors.push({ path: `${path}.data`, message: "Contained element data must be JSON-compatible." });
-  }
-  if (input.body !== undefined) {
-    // Reuse the kernel's recursive body validation by wrapping the embedded
-    // body in a document, then re-rooting the error paths at this entry.
-    const bodyErrors = validateDocument({ protocol: PAPER_DOLL_PROTOCOL, body: input.body });
-    for (const error of bodyErrors) {
-      errors.push({ path: error.path.replace(/^\$\.body/, `${path}.body`), message: error.message });
-    }
-  }
+  input.forEach((element, index) => validateContainedElement(element, `${path}.${index}`, errors));
 }
 
 function validateIndex(input: unknown, path: string, errors: ProtocolError[]): void {
   if (typeof input !== "number" || !Number.isInteger(input) || input < 0) {
     errors.push({ path, message: "Index must be a non-negative integer." });
-  }
-}
-
-function validateKnownKeys(
-  input: Record<string, unknown>,
-  allowed: readonly string[],
-  path: string,
-  errors: ProtocolError[]
-): void {
-  for (const key of Object.keys(input)) {
-    if (!allowed.includes(key)) {
-      errors.push({ path: `${path}.${key}`, message: `Unknown key "${key}".` });
-    }
   }
 }
 
@@ -904,25 +831,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isId(value: unknown): value is string {
-  return typeof value === "string" && ID_PATTERN.test(value);
-}
-
 function isSide(value: unknown): value is Side {
   return typeof value === "string" && SIDE_SET.has(value);
 }
 
-function isJsonValue(value: unknown, seen = new Set<object>()): value is JsonValue {
-  if (value === null) return true;
-  const type = typeof value;
-  if (type === "string" || type === "boolean") return true;
-  if (type === "number") return Number.isFinite(value);
-  if (type !== "object") return false;
-
-  if (seen.has(value as object)) return false;
-  seen.add(value as object);
-
-  if (Array.isArray(value)) return value.every((item) => isJsonValue(item, seen));
-  if (!isRecord(value)) return false;
-  return Object.values(value).every((item) => isJsonValue(item, seen));
-}
