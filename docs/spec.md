@@ -233,8 +233,7 @@ rather than returning `ProtocolError`s.
 - **No scene targeting.** v1 patches target bodies only. Scene targeting —
   relation entries traveling in the same transaction as the structural change
   that orphaned them (the rope drops *as part of* the severing) — is
-  the next phase, now unblocked by paperchain v1, per paperchain decisions 1
-  and 4.
+  paperfold/v2, specified below.
 - **No identity assignment.** A patch does not know whose body it edits;
   binding patches to characters, saves, or sessions is forever consumer-side
   (pre-RFC decision 6).
@@ -245,3 +244,203 @@ rather than returning `ProtocolError`s.
 - **No interpretation.** paperfold never reads `element.data`, never renders,
   never decides what a severing *means*. It records that a lawful difference
   occurred, and can take it back.
+
+---
+
+# paperfold/v2 — Scene patches
+
+Status: v2, hardened 2026-07-10 (same day as v1; shipped in paperfold 0.2.0)
+Depends on: paperchain/v1 (paperchain >= the exported operation surface below)
+and everything v1 depends on. v1 is unchanged and remains valid interchange;
+v2 is a second document dialect in the same library.
+
+paperfold/v2 does to paperchain what v1 did to the kernel: it reifies the
+scene layer's operation set as patch entries, so that change to a *scene* —
+bodies, kinds, and relations together — is a value with the same four laws.
+The v1 discipline is widened, not changed.
+
+## The scene patch document
+
+```jsonc
+{
+  "protocol": "paperfold/v2",
+  "patch": [ /* entries, applied in order, atomically */ ]
+}
+```
+
+Strict unknown-key validation applies at every level, as everywhere in the
+family. An entry is one of exactly two families:
+
+1. **A kernel entry aimed at a scene body.** Any of the seven v1 entry shapes,
+   unchanged, plus a required `body` (the scene body's name — a lowercase
+   slug) and an optional `path` (below). The entry applies inside that body
+   through the v1 machinery.
+2. **A scene entry: the reification of exactly one paperchain operation.**
+   One entry shape per exported paperchain operation — the same rule, the
+   same coupling: paperfold can never express a scene edit paperchain cannot
+   perform, and a change to paperchain's operation set is a breaking change
+   for paperfold **by definition**, exactly as with the kernel.
+
+| entry | fields | destruction / precondition records |
+|---|---|---|
+| `declareKind` | `kindId`, `declaration` | none destroyed; the declaration doubles as the material for inversion |
+| `deleteKind` | `kindId` | `declaration`: the deleted declaration exactly as it was |
+| `insertBody` | `name` | `body`: the full body, valid paper-doll/v3 |
+| `deleteBody` | `name` | `body`: the deleted body exactly as it was (compared canonically) |
+| `addRelation` | `relation` | none destroyed; the relation doubles as its own record |
+| `removeRelation` | — | `relation`: the removed relation, in **stored** orientation (below) |
+
+Kind ids and body names are lowercase slugs; kind declarations are
+paperchain's (`symmetric`, `irreflexive`, `fromMax`, `toMax`, with symmetric
+kinds forbidden `toMax`); relations are paperchain's
+`{ kind, from, to }` with scene-address endpoints (`bodyName/…`, at least two
+segments — a bare body name is not an endpoint). paperfold restates none of
+paperchain's rules; it validates these fields to the same grammar and defers
+the laws to paperchain at apply time.
+
+## Destruction records over scenes
+
+`deleteKind`, `deleteBody`, and `removeRelation` carry what the paperchain
+operation reports, and the records serve twice, as in v1: material for
+body-free inversion, and law-4 staleness preconditions checked against what
+the operation actually reports at apply time. Body records are compared in
+canonical form; declarations by deep equality.
+
+**The stored-orientation rule.** paperchain stores a symmetric relation in
+whichever endpoint order it was added, and `removeRelation` reports the
+stored form. A `removeRelation` entry's record must match that stored
+orientation exactly — a record whose endpoints are swapped relative to
+storage names the same symmetric relation but is a **stale** record: it was
+taken from a different state (or never taken at all). This keeps the record a
+genuine report, not a description; inversion then re-adds the relation
+exactly as it was stored. (An `addRelation` entry's relation is trivially in
+stored orientation — paperchain stores it as written — so its inverse
+`removeRelation` needs no adjustment.)
+
+## Nested-body paths
+
+A kernel entry's optional `path` addresses an embedded body inside the named
+scene body, using the kernel's own address grammar: a `/`-separated chain of
+lowercase ids in alternating vessel / element-id pairs — so an **even**
+number of segments — where each element carries a `body`, descending through
+`element.body` at every pair, and ending *at* an embedded body. The entry
+applies inside that innermost body, and **all of the entry's fields and
+records are stated relative to the inner body** — vessel ids, indices, and
+destruction records alike. Inversion stamps the same `body` and `path` onto
+every inverse entry.
+
+Resolution failure is staleness: a path whose prefix no longer resolves — a
+missing vessel, a missing element, or an element that carries no body — was
+recorded against a different structure, and refuses the patch with a
+`stale patch: …` error naming the deepest failing prefix.
+
+## Laws
+
+The four laws of v1, restated over scenes; nothing is added and nothing
+weakened.
+
+1. **Soundness.** `applyScenePatch(a, diffScenes(a, b)) = b` in canonical
+   form, for any pair of valid scenes for which the diff succeeds. Sound, not
+   minimal, as always.
+2. **Composition.** `composeScenePatches` is entry concatenation, and
+   applying the composition equals applying in sequence. Associative.
+3. **Partial invertibility.** `invertScenePatch` is body-free — computed from
+   the entries alone. It reverses the sequence and inverts each entry:
+   `declareKind` ↔ `deleteKind`, `insertBody` ↔ `deleteBody`,
+   `addRelation` ↔ `removeRelation` (records swap roles as in v1), and kernel
+   entries invert through the v1 table with `body`/`path` re-stamped.
+   Sequence reversal alone settles the dependency order between kinds,
+   bodies, and relations — no topological reasoning is needed.
+4. **Staleness.** Every destruction record — the scene entries' above, and
+   the kernel records inside targeted bodies — is checked against what the
+   operation actually reports; any mismatch, a missing scene body, or an
+   unresolvable path refuses the whole patch. Refused, not repaired.
+
+Commutation remains absent, for v1's reasons.
+
+## Application semantics
+
+`applyScenePatch(scene, patch)`:
+
+1. Validate the patch document structurally; any error refuses the patch.
+2. Apply entries in order. Scene entries go through paperchain's exported
+   operations, which enforce paperchain's **local** laws (kind existence and
+   uniqueness, endpoint existence, irreflexivity, multiplicity, no
+   duplicates, deleteKind refusing while relations use the kind, deleteBody
+   refusing while relations touch the body) by throwing; a thrown violation
+   becomes a path-annotated error at `$.patch.N`. Kernel entries resolve
+   their `body` and optional `path`, apply through the v1 entry machinery
+   against the inner body, and re-embed the result — siblings of the path
+   untouched. Each entry's records are checked per law 4.
+3. After the last entry, validate the resulting scene globally with
+   paperchain's `validateScene` — all seven scene laws, including body
+   validity of every body. Multi-entry patches legitimately pass through
+   globally incomplete intermediate states, the local/global split
+   generalized once more.
+4. On success, return the scene in canonical form. On any failure, return
+   the errors and no scene: atomic by purity.
+
+**Strict dangling is enforced twice.** paperchain's law 4 (no dangling
+relation endpoints) is enforced locally by `deleteBody` — paperchain refuses
+to delete a body while relations touch it — and globally by the final
+`validateScene`, which catches endpoints orphaned by kernel entries *inside*
+a body (a removed element, a deleted vessel). A patch whose body edits orphan
+a relation endpoint must therefore carry the `removeRelation` in the same
+transaction: **the rope drops as part of the severing.** This is the
+transaction story the pre-RFC promised (decision 4), now a law-level
+consequence rather than a convention — and `diffScenes` always emits such
+cleanup, so diffed patches never need hand-repair.
+
+## Canonical form over scenes
+
+A scene is canonical when every body (at the scene level and recursively
+through embeddings) is canonical in the v1 sense, and the relation table is
+sorted by `(kind, from, to)`. paperchain's relations are a flat table whose
+order carries no meaning, so a remove/re-add cycle must not read as change;
+sorting is the only normalization relations need. Kinds have no
+non-canonical spellings, and scene addresses are already canonical strings.
+`applyScenePatch` returns canonical scenes, and all staleness comparisons of
+bodies are canonical.
+
+## Diff
+
+`diffScenes(a, b)` produces a sound patch by tracking a live intermediate
+scene, so each entry's records are computed from the state that entry will
+actually apply against, and each phase's local-law preconditions hold. Seven
+phases, in order:
+
+1. **remove relations** absent from `b` — including every relation of a kind
+   whose declaration changed;
+2. **delete bodies** absent from `b` (their relations went in 1, so
+   `deleteBody`'s local law holds);
+3. **delete kinds** absent from `b` or re-declared;
+4. **declare kinds** new in `b` or re-declared;
+5. **insert bodies** new in `b`;
+6. per kept body that differs, the **v1 body diff**, its entries stamped with
+   the body name;
+7. **add relations** of `b` not yet present.
+
+**The kind-re-declaration cycling rule.** A changed kind declaration reifies
+as `deleteKind` + `declareKind` — there is no update operation to reify, as
+ever. `deleteKind` refuses while relations use the kind, so every relation of
+a re-declared kind is removed in phase 1 and re-added in phase 7, *even when
+the relation itself is textually unchanged*. The relation cycles around the
+re-declaration; soundness holds and order in the relation table carries no
+meaning, so nothing is lost — but consumers must not read the cycle as
+relation churn (law 1's minimality caveat, again).
+
+Within each phase, entries are emitted in a deterministic sorted order
+(relations by `(kind, from, to)`; bodies and kinds by name) — a
+quality-of-implementation property, not a law.
+
+## Limitations, recorded
+
+- **Diff stays shallow.** Phase 6 is the v1 body diff, which compares
+  elements as values: a difference deep inside an embedded body reifies as
+  whole-element replacement, never as a `path`-targeted patch into the
+  embedding. `path` exists for hand-authored (and inverted) patches;
+  `diffScenes` does not yet emit it. As in v1, a recursive diff would be
+  expressible in this same vocabulary and may arrive without a protocol
+  bump.
+- v1's other limitations (no commutation, no minimality, root equality and
+  root-`accepts` within each body diff) carry over unchanged.

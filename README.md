@@ -97,7 +97,7 @@ All operations are pure; inputs are never mutated.
 - [paperfold](https://github.com/urcades/paperfold) — the dynamics layer: this library.
 - [papermold](https://github.com/urcades/papermold) — the judgment layer: profiles and conformance over bodies and scenes.
 
-Scene targeting (patches over paperchain scenes, with relation cleanup in the same transaction as the structural change that orphaned it) is the next phase, now unblocked by paperchain v1 (per paperchain decisions 1 and 4).
+Scene targeting is paperfold/v2 — see below.
 
 ## Portability
 
@@ -116,3 +116,68 @@ Validation is strict: unknown keys anywhere in a patch document are rejected. `C
 ## Design Notes
 
 See [`docs/rfc-paperfold.md`](docs/rfc-paperfold.md) for the pre-RFC lineage (why a sibling and not a kernel extension, the reification rule, the deferred commutation law), and [`docs/spec.md`](docs/spec.md) for the hardened v1 specification with resolved micro-decisions.
+
+## Scene Patches (paperfold/v2)
+
+`paperfold/v2` does to [paperchain](https://github.com/urcades/paperchain) what v1 does to the kernel: it reifies the scene layer's operation set, so change to a whole scene — bodies, kinds, and relations together — is a value with the same four laws. An entry is either one of the seven kernel entries aimed at a named scene body (a `body` field, plus an optional nested-body `path`), or the reification of exactly one paperchain operation: `declareKind`, `deleteKind`, `insertBody`, `deleteBody`, `addRelation`, `removeRelation`. paperfold can never express a scene edit paperchain cannot perform.
+
+```ts
+import { PAPERFOLD_SCENE_PROTOCOL, applyScenePatch } from "paperfold";
+import type { ScenePatchDocument } from "paperfold";
+
+// declare a kind and relate two bodies
+const binding: ScenePatchDocument = {
+  protocol: PAPERFOLD_SCENE_PROTOCOL,
+  patch: [
+    { op: "declareKind", kindId: "holds", declaration: { fromMax: 1 } },
+    { op: "addRelation", relation: { kind: "holds", from: "alice/left-hand", to: "bob/right-hand/rope" } }
+  ]
+};
+const bound = applyScenePatch(scene, binding);
+```
+
+The marquee is the transaction story: paperchain forbids dangling relation endpoints (strictly, twice — locally in `deleteBody`, globally in the final scene validation), so a structural edit that orphans a relation must carry the relation cleanup **in the same patch**. The rope drops as part of the severing:
+
+```ts
+// sever the rope from alice's hand — the holds relation goes in the same transaction
+const severing: ScenePatchDocument = {
+  protocol: PAPERFOLD_SCENE_PROTOCOL,
+  patch: [
+    { op: "removeRelation", relation: { kind: "holds", from: "alice/left-hand", to: "bob/right-hand/rope" } },
+    {
+      op: "removeElement",
+      body: "bob",
+      vesselId: "right-hand",
+      index: 0,
+      element: { kind: "item", type: "held", id: "rope" }
+    }
+  ]
+};
+```
+
+Without the `removeRelation`, the patch is refused — and `diffScenes` always emits such cleanup itself.
+
+Kernel entries can also reach *inside* an embedded body with `path`: an alternating vessel/element-id chain (even segment count) ending at an element that carries a body, with the entry's fields stated relative to that inner body:
+
+```ts
+{
+  op: "insertElement",
+  body: "alice",
+  path: "back/field-pack",       // the pack embedded in alice's back
+  vesselId: "side-pocket",       // a vessel of the pack's body
+  element: { kind: "item", type: "tool", id: "whetstone" },
+  index: 1
+}
+```
+
+A path whose prefix no longer resolves is a stale patch, refused like any other staleness. (`diffScenes` itself stays shallow: nested differences reify as whole-element replacement; `path` is for hand-authored patches and their inverses.)
+
+v2 exports, mirroring the v1 surface one-for-one:
+
+- constants: `PAPERFOLD_SCENE_PROTOCOL`
+- validation: `parseScenePatch`, `assertScenePatch`, `validateScenePatch`
+- dynamics: `applyScenePatch`, `invertScenePatch`, `composeScenePatches`, `diffScenes`
+- canonical form: `canonicalizeScene` (canonical bodies plus the relation table sorted by `(kind, from, to)` — relation order carries no meaning)
+- types: `ScenePatchDocument`, `ScenePatchEntry`, `SceneKernelEntry`, `SceneEntry` and the six scene entry types, plus re-exported paperchain types (`Scene`, `Relation`, `KindDeclaration`, `KindId`, `BodyName`, `SceneAddress`)
+
+The v2 document format is captured structurally in [`schema/paperfold-v2.schema.json`](schema/paperfold-v2.schema.json); the hardened specification lives in [`docs/spec.md`](docs/spec.md) alongside v1.

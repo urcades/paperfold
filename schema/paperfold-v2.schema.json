@@ -1,0 +1,663 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/urcades/paperfold/main/schema/paperfold-v2.schema.json",
+  "title": "paperfold/v2 scene patch document",
+  "description": "A patch over a paperchain/v1 scene: an ordered transaction of entries, each either a paperfold/v1 kernel entry aimed at a named scene body (optionally through a nested-body path) or the reification of exactly one paperchain operation, carrying the destruction records that operation reports. This schema captures the structural laws of paperfold/v2: shape, ids, known keys, the two entry families, the scene-address grammar, and the prohibition of toMax on symmetric kind declarations. Laws requiring evaluation beyond schema are specified in docs/spec.md: the destruction records are integrity preconditions checked against what the operation actually reports at apply time (staleness); removeRelation records must be in the STORED orientation for symmetric relations; a path must resolve as an alternating vessel/element-id chain through element.body, and a path whose prefix no longer resolves is a stale patch; strict dangling is enforced twice (locally by deleteBody, globally by the final validateScene) so relation cleanup must travel in the same transaction as the structural change that orphaned it; and the final scene must satisfy all of paperchain/v1's laws, including paper-doll/v3 validity of every body. The four paperfold laws (soundness, composition, partial invertibility, staleness) are restated over scenes in docs/spec.md.",
+  "type": "object",
+  "required": [
+    "protocol",
+    "patch"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "protocol": {
+      "const": "paperfold/v2"
+    },
+    "patch": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/entry"
+      }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "side": {
+      "enum": [
+        "top",
+        "right",
+        "bottom",
+        "left"
+      ]
+    },
+    "index": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "bodyPath": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*(/[a-z][a-z0-9-]*)+$",
+      "description": "Address of an embedded-body chain inside the targeted scene body: alternating vessel/element-id pairs, so an even number of segments, ending at an element that carries a body. The even-segment rule and body-carrying resolution cannot be expressed in this regex; they are validated at apply time."
+    },
+    "sceneAddress": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*(/[a-z][a-z0-9-]*)+$"
+    },
+    "kindDeclaration": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "symmetric": {
+          "type": "boolean"
+        },
+        "irreflexive": {
+          "type": "boolean"
+        },
+        "fromMax": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "toMax": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "if": {
+        "properties": {
+          "symmetric": {
+            "const": true
+          }
+        },
+        "required": [
+          "symmetric"
+        ]
+      },
+      "then": {
+        "not": {
+          "required": [
+            "toMax"
+          ]
+        }
+      }
+    },
+    "relation": {
+      "type": "object",
+      "required": [
+        "kind",
+        "from",
+        "to"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/id"
+        },
+        "from": {
+          "$ref": "#/$defs/sceneAddress"
+        },
+        "to": {
+          "$ref": "#/$defs/sceneAddress"
+        }
+      }
+    },
+    "endpoint": {
+      "type": "object",
+      "required": [
+        "vessel",
+        "side"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "vessel": {
+          "$ref": "#/$defs/id"
+        },
+        "side": {
+          "$ref": "#/$defs/side"
+        }
+      }
+    },
+    "connection": {
+      "type": "object",
+      "required": [
+        "from",
+        "to"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "from": {
+          "$ref": "#/$defs/endpoint"
+        },
+        "to": {
+          "$ref": "#/$defs/endpoint"
+        }
+      }
+    },
+    "nullableConnection": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/connection"
+        }
+      ]
+    },
+    "portAddress": {
+      "type": "object",
+      "required": [
+        "vessel",
+        "side"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "vessel": {
+          "$ref": "#/$defs/id"
+        },
+        "side": {
+          "$ref": "#/$defs/side"
+        }
+      }
+    },
+    "acceptToken": {
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/id"
+        },
+        "type": {
+          "$ref": "#/$defs/id"
+        }
+      }
+    },
+    "containedElement": {
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/id"
+        },
+        "type": {
+          "$ref": "#/$defs/id"
+        },
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "data": true,
+        "body": {
+          "$ref": "#/$defs/body"
+        }
+      }
+    },
+    "vesselShape": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "accepts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/acceptToken"
+          }
+        },
+        "contains": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/containedElement"
+          }
+        }
+      }
+    },
+    "vessel": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "accepts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/acceptToken"
+          }
+        },
+        "contains": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/containedElement"
+          }
+        },
+        "ports": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "top": {
+              "$ref": "#/$defs/portAddress"
+            },
+            "right": {
+              "$ref": "#/$defs/portAddress"
+            },
+            "bottom": {
+              "$ref": "#/$defs/portAddress"
+            },
+            "left": {
+              "$ref": "#/$defs/portAddress"
+            }
+          }
+        }
+      }
+    },
+    "body": {
+      "type": "object",
+      "required": [
+        "root",
+        "vessels"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "root": {
+          "$ref": "#/$defs/id"
+        },
+        "vessels": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9-]*$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/vessel"
+          }
+        }
+      }
+    },
+    "entry": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/connectEntry"
+        },
+        {
+          "$ref": "#/$defs/disconnectEntry"
+        },
+        {
+          "$ref": "#/$defs/insertVesselEntry"
+        },
+        {
+          "$ref": "#/$defs/deleteVesselEntry"
+        },
+        {
+          "$ref": "#/$defs/insertElementEntry"
+        },
+        {
+          "$ref": "#/$defs/removeElementEntry"
+        },
+        {
+          "$ref": "#/$defs/moveElementEntry"
+        },
+        {
+          "$ref": "#/$defs/declareKindEntry"
+        },
+        {
+          "$ref": "#/$defs/deleteKindEntry"
+        },
+        {
+          "$ref": "#/$defs/insertBodyEntry"
+        },
+        {
+          "$ref": "#/$defs/deleteBodyEntry"
+        },
+        {
+          "$ref": "#/$defs/addRelationEntry"
+        },
+        {
+          "$ref": "#/$defs/removeRelationEntry"
+        }
+      ]
+    },
+    "connectEntry": {
+      "type": "object",
+      "required": [
+        "op",
+        "body",
+        "from",
+        "to",
+        "displaced"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "connect"
+        },
+        "body": {
+          "$ref": "#/$defs/id"
+        },
+        "path": {
+          "$ref": "#/$defs/bodyPath"
+        },
+        "from": {
+          "$ref": "#/$defs/endpoint"
+        },
+        "to": {
+          "$ref": "#/$defs/endpoint"
+        },
+        "displaced": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/connection"
+          }
+        }
+      }
+    },
+    "disconnectEntry": {
+      "type": "object",
+      "required": [
+        "op",
+        "body",
+        "endpoint",
+        "removed"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "disconnect"
+        },
+        "body": {
+          "$ref": "#/$defs/id"
+        },
+        "path": {
+          "$ref": "#/$defs/bodyPath"
+        },
+        "endpoint": {
+          "$ref": "#/$defs/endpoint"
+        },
+        "removed": {
+          "$ref": "#/$defs/connection"
+        }
+      }
+    },
+    "insertVesselEntry": {
+      "type": "object",
+      "required": [
+        "op",
+        "body",
+        "vesselId",
+        "vessel",
+        "bridged"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "insertVessel"
+        },
+        "body": {
+          "$ref": "#/$defs/id"
+        },
+        "path": {
+          "$ref": "#/$defs/bodyPath"
+        },
+        "vesselId": {
+          "$ref": "#/$defs/id"
+        },
+        "vessel": {
+          "$ref": "#/$defs/vesselShape"
+        },
+        "at": {
+          "$ref": "#/$defs/endpoint"
+        },
+        "bridged": {
+          "$ref": "#/$defs/nullableConnection"
+        }
+      }
+    },
+    "deleteVesselEntry": {
+      "type": "object",
+      "required": [
+        "op",
+        "body",
+        "vesselId",
+        "vessel",
+        "collapsed"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "deleteVessel"
+        },
+        "body": {
+          "$ref": "#/$defs/id"
+        },
+        "path": {
+          "$ref": "#/$defs/bodyPath"
+        },
+        "vesselId": {
+          "$ref": "#/$defs/id"
+        },
+        "collapseOppositeNeighbors": {
+          "type": "boolean"
+        },
+        "vessel": {
+          "$ref": "#/$defs/vessel"
+        },
+        "collapsed": {
+          "$ref": "#/$defs/nullableConnection"
+        }
+      }
+    },
+    "insertElementEntry": {
+      "type": "object",
+      "required": [
+        "op",
+        "body",
+        "vesselId",
+        "element",
+        "index"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "insertElement"
+        },
+        "body": {
+          "$ref": "#/$defs/id"
+        },
+        "path": {
+          "$ref": "#/$defs/bodyPath"
+        },
+        "vesselId": {
+          "$ref": "#/$defs/id"
+        },
+        "element": {
+          "$ref": "#/$defs/containedElement"
+        },
+        "index": {
+          "$ref": "#/$defs/index"
+        }
+      }
+    },
+    "removeElementEntry": {
+      "type": "object",
+      "required": [
+        "op",
+        "body",
+        "vesselId",
+        "index",
+        "element"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "removeElement"
+        },
+        "body": {
+          "$ref": "#/$defs/id"
+        },
+        "path": {
+          "$ref": "#/$defs/bodyPath"
+        },
+        "vesselId": {
+          "$ref": "#/$defs/id"
+        },
+        "index": {
+          "$ref": "#/$defs/index"
+        },
+        "element": {
+          "$ref": "#/$defs/containedElement"
+        }
+      }
+    },
+    "moveElementEntry": {
+      "type": "object",
+      "required": [
+        "op",
+        "body",
+        "from",
+        "index",
+        "to",
+        "element",
+        "toIndex"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "moveElement"
+        },
+        "body": {
+          "$ref": "#/$defs/id"
+        },
+        "path": {
+          "$ref": "#/$defs/bodyPath"
+        },
+        "from": {
+          "$ref": "#/$defs/id"
+        },
+        "index": {
+          "$ref": "#/$defs/index"
+        },
+        "to": {
+          "$ref": "#/$defs/id"
+        },
+        "element": {
+          "$ref": "#/$defs/containedElement"
+        },
+        "toIndex": {
+          "$ref": "#/$defs/index"
+        }
+      }
+    },
+    "declareKindEntry": {
+      "type": "object",
+      "required": [
+        "op",
+        "kindId",
+        "declaration"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "declareKind"
+        },
+        "kindId": {
+          "$ref": "#/$defs/id"
+        },
+        "declaration": {
+          "$ref": "#/$defs/kindDeclaration"
+        }
+      }
+    },
+    "deleteKindEntry": {
+      "type": "object",
+      "required": [
+        "op",
+        "kindId",
+        "declaration"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "deleteKind"
+        },
+        "kindId": {
+          "$ref": "#/$defs/id"
+        },
+        "declaration": {
+          "$ref": "#/$defs/kindDeclaration"
+        }
+      }
+    },
+    "insertBodyEntry": {
+      "type": "object",
+      "required": [
+        "op",
+        "name",
+        "body"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "insertBody"
+        },
+        "name": {
+          "$ref": "#/$defs/id"
+        },
+        "body": {
+          "$ref": "#/$defs/body"
+        }
+      }
+    },
+    "deleteBodyEntry": {
+      "type": "object",
+      "required": [
+        "op",
+        "name",
+        "body"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "deleteBody"
+        },
+        "name": {
+          "$ref": "#/$defs/id"
+        },
+        "body": {
+          "$ref": "#/$defs/body"
+        }
+      }
+    },
+    "addRelationEntry": {
+      "type": "object",
+      "required": [
+        "op",
+        "relation"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "addRelation"
+        },
+        "relation": {
+          "$ref": "#/$defs/relation"
+        }
+      }
+    },
+    "removeRelationEntry": {
+      "type": "object",
+      "required": [
+        "op",
+        "relation"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "removeRelation"
+        },
+        "relation": {
+          "$ref": "#/$defs/relation"
+        }
+      }
+    }
+  }
+}
