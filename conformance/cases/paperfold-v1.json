@@ -1,0 +1,237 @@
+{
+  "corpus": "paper-family-conformance/v2",
+  "cases": [
+    {
+      "id": "fold-v1-validates-all-entry-types",
+      "rule": "paperfold/v1#paperfold-v1-entry-vocabulary",
+      "subject": "paperfold/v1",
+      "operation": "validatePatch",
+      "input": { "args": [{ "protocol": "paperfold/v1", "patch": [
+        { "op": "connect", "from": { "vessel": "a", "side": "right" }, "to": { "vessel": "b", "side": "left" }, "displaced": [] },
+        { "op": "disconnect", "endpoint": { "vessel": "a", "side": "right" }, "removed": { "from": { "vessel": "a", "side": "right" }, "to": { "vessel": "b", "side": "left" } } },
+        { "op": "insertVessel", "vesselId": "c", "vessel": {}, "bridged": null },
+        { "op": "deleteVessel", "vesselId": "c", "vessel": {}, "collapsed": null },
+        { "op": "insertElement", "vesselId": "bag", "element": { "kind": "item", "id": "x" }, "index": 0 },
+        { "op": "removeElement", "vesselId": "bag", "index": 0, "element": { "kind": "item", "id": "x" } },
+        { "op": "moveElement", "from": "bag", "index": 0, "to": "bag", "element": { "kind": "item", "id": "x" }, "toIndex": 0 }
+      ] }] },
+      "expected": { "outcome": "valid" }
+    },
+    {
+      "id": "fold-v1-rejects-malformed-entry-records",
+      "rule": "paperfold/v1#paperfold-v1-patch-document",
+      "subject": "paperfold/v1",
+      "operation": "validatePatch",
+      "input": { "args": [{ "protocol": "paperfold/v1", "patch": [
+        { "op": "unknown" },
+        { "op": "disconnect", "endpoint": { "vessel": "a", "side": "right" }, "removed": null }
+      ] }] },
+      "expected": { "outcome": "invalid", "includesErrorPaths": ["$.patch.0.op", "$.patch.1.removed"] }
+    },
+    {
+      "id": "fold-v1-rejects-nonstring-ops",
+      "rule": "paperfold/v1#paperfold-v1-patch-document",
+      "subject": "paperfold/v1",
+      "operation": "validatePatch",
+      "input": { "args": [{ "protocol": "paperfold/v1", "patch": [
+        { "op": [] }, { "op": {} }
+      ] }] },
+      "expected": { "outcome": "invalid", "includesErrorPaths": ["$.patch.0.op", "$.patch.1.op"] }
+    },
+    {
+      "id": "fold-v1-applies-all-entry-types",
+      "rule": "paperfold/v1#paperfold-v1-application-semantics",
+      "subject": "paperfold/v1",
+      "operation": "applyPatch",
+      "input": { "args": [
+        { "root": "a", "vessels": {
+          "a": {}, "b": {},
+          "bag": { "contains": [{ "kind": "item", "id": "first" }, { "kind": "item", "id": "second" }] }
+        } },
+        { "protocol": "paperfold/v1", "patch": [
+          { "op": "connect", "from": { "vessel": "a", "side": "right" }, "to": { "vessel": "b", "side": "left" }, "displaced": [] },
+          { "op": "disconnect", "endpoint": { "vessel": "a", "side": "right" }, "removed": { "from": { "vessel": "a", "side": "right" }, "to": { "vessel": "b", "side": "left" } } },
+          { "op": "insertVessel", "vesselId": "mid", "vessel": {}, "bridged": null },
+          { "op": "deleteVessel", "vesselId": "mid", "vessel": {}, "collapsed": null },
+          { "op": "insertElement", "vesselId": "bag", "element": { "kind": "item", "id": "temporary" }, "index": 1 },
+          { "op": "removeElement", "vesselId": "bag", "index": 1, "element": { "kind": "item", "id": "temporary" } },
+          { "op": "moveElement", "from": "bag", "index": 0, "to": "bag", "element": { "kind": "item", "id": "first" }, "toIndex": 1 }
+        ] }
+      ] },
+      "expected": { "outcome": "ok", "value": {
+        "root": "a", "vessels": {
+          "a": {}, "b": {},
+          "bag": { "contains": [{ "kind": "item", "id": "second" }, { "kind": "item", "id": "first" }] }
+        }
+      } }
+    },
+    {
+      "id": "fold-v1-stale-connect-displaced",
+      "rule": "paperfold/v1#paperfold-v1-law-staleness",
+      "subject": "paperfold/v1",
+      "operation": "applyPatch",
+      "input": { "args": [
+        { "root": "a", "vessels": {
+          "a": { "ports": { "right": { "vessel": "b", "side": "left" } } },
+          "b": { "ports": { "left": { "vessel": "a", "side": "right" } } }, "c": {}
+        } },
+        { "protocol": "paperfold/v1", "patch": [{
+          "op": "connect", "from": { "vessel": "a", "side": "right" }, "to": { "vessel": "c", "side": "left" }, "displaced": []
+        }] }
+      ] },
+      "expected": { "outcome": "invalid", "includesErrorPaths": ["$.patch.0.displaced"] }
+    },
+    {
+      "id": "fold-v1-stale-disconnect-record",
+      "rule": "paperfold/v1#paperfold-v1-law-staleness",
+      "subject": "paperfold/v1",
+      "operation": "applyPatch",
+      "input": { "args": [
+        { "root": "a", "vessels": {
+          "a": { "ports": { "right": { "vessel": "b", "side": "left" } } },
+          "b": { "ports": { "left": { "vessel": "a", "side": "right" } } }, "c": {}
+        } },
+        { "protocol": "paperfold/v1", "patch": [{
+          "op": "disconnect", "endpoint": { "vessel": "a", "side": "right" },
+          "removed": { "from": { "vessel": "a", "side": "right" }, "to": { "vessel": "c", "side": "left" } }
+        }] }
+      ] },
+      "expected": { "outcome": "invalid", "includesErrorPaths": ["$.patch.0.removed"] }
+    },
+    {
+      "id": "fold-v1-stale-insert-bridge",
+      "rule": "paperfold/v1#paperfold-v1-law-staleness",
+      "subject": "paperfold/v1",
+      "operation": "applyPatch",
+      "input": { "args": [
+        { "root": "a", "vessels": {
+          "a": { "ports": { "right": { "vessel": "b", "side": "left" } } },
+          "b": { "ports": { "left": { "vessel": "a", "side": "right" } } }
+        } },
+        { "protocol": "paperfold/v1", "patch": [{
+          "op": "insertVessel", "vesselId": "mid", "vessel": {},
+          "at": { "vessel": "a", "side": "right" }, "bridged": null
+        }] }
+      ] },
+      "expected": { "outcome": "invalid", "includesErrorPaths": ["$.patch.0.bridged"] }
+    },
+    {
+      "id": "fold-v1-stale-delete-vessel",
+      "rule": "paperfold/v1#paperfold-v1-law-staleness",
+      "subject": "paperfold/v1",
+      "operation": "applyPatch",
+      "input": { "args": [
+        { "root": "root", "vessels": { "root": {}, "spare": {} } },
+        { "protocol": "paperfold/v1", "patch": [{
+          "op": "deleteVessel", "vesselId": "spare", "vessel": { "accepts": [] }, "collapsed": null
+        }] }
+      ] },
+      "expected": { "outcome": "invalid", "includesErrorPaths": ["$.patch.0.vessel"] }
+    },
+    {
+      "id": "fold-v1-failure-is-atomic",
+      "rule": "paperfold/v1#paperfold-v1-application-semantics",
+      "subject": "paperfold/v1",
+      "operation": "applyPatch",
+      "input": { "args": [
+        { "root": "bag", "vessels": { "bag": { "contains": [{ "kind": "item", "id": "kept" }] } } },
+        { "protocol": "paperfold/v1", "patch": [
+          { "op": "insertElement", "vesselId": "bag", "element": { "kind": "item", "id": "temporary" }, "index": 1 },
+          { "op": "removeElement", "vesselId": "bag", "index": 0, "element": { "kind": "item", "id": "wrong" } }
+        ] }
+      ] },
+      "expected": { "outcome": "invalid", "includesErrorPaths": ["$.patch.1.element"] }
+    },
+    {
+      "id": "fold-v1-canonicalizes-empty-nested-forms",
+      "rule": "paperfold/v1#paperfold-v1-canonical-form",
+      "subject": "paperfold/v1",
+      "operation": "applyPatch",
+      "input": { "args": [
+        { "root": "outer", "vessels": { "outer": { "contains": [{
+          "kind": "part", "id": "nested", "body": {
+            "root": "inner", "vessels": { "inner": { "ports": {}, "contains": [] } }
+          }
+        }] } } },
+        { "protocol": "paperfold/v1", "patch": [] }
+      ] },
+      "expected": { "outcome": "ok", "value": {
+        "root": "outer", "vessels": { "outer": { "contains": [{
+          "kind": "part", "id": "nested", "body": { "root": "inner", "vessels": { "inner": {} } }
+        }] } }
+      } }
+    },
+    {
+      "id": "fold-v1-inverts-move-positionally",
+      "rule": "paperfold/v1#paperfold-v1-law-partial-invertibility",
+      "subject": "paperfold/v1",
+      "operation": "invertPatch",
+      "input": { "args": [{ "protocol": "paperfold/v1", "patch": [{
+        "op": "moveElement", "from": "left", "index": 1, "to": "right",
+        "element": { "kind": "item", "id": "gem" }, "toIndex": 2
+      }] }] },
+      "expected": { "outcome": "ok", "value": { "protocol": "paperfold/v1", "patch": [
+        { "op": "removeElement", "vesselId": "right", "index": 2, "element": { "kind": "item", "id": "gem" } },
+        { "op": "insertElement", "vesselId": "left", "element": { "kind": "item", "id": "gem" }, "index": 1 }
+      ] } }
+    },
+    {
+      "id": "fold-v1-compose-is-concatenation",
+      "rule": "paperfold/v1#paperfold-v1-law-composition",
+      "subject": "paperfold/v1",
+      "operation": "composePatches",
+      "input": { "args": [
+        { "protocol": "paperfold/v1", "patch": [{ "op": "insertElement", "vesselId": "bag", "element": { "kind": "item", "id": "a" }, "index": 0 }] },
+        { "protocol": "paperfold/v1", "patch": [{ "op": "removeElement", "vesselId": "bag", "index": 0, "element": { "kind": "item", "id": "a" } }] }
+      ] },
+      "expected": { "outcome": "ok", "value": { "protocol": "paperfold/v1", "patch": [
+        { "op": "insertElement", "vesselId": "bag", "element": { "kind": "item", "id": "a" }, "index": 0 },
+        { "op": "removeElement", "vesselId": "bag", "index": 0, "element": { "kind": "item", "id": "a" } }
+      ] } }
+    },
+    {
+      "id": "fold-v1-diff-laws-partial-middle",
+      "rule": "paperfold/v1#paperfold-v1-law-soundness",
+      "subject": "paperfold/v1",
+      "operation": "diffLaws",
+      "input": { "args": [
+        { "root": "bag", "vessels": { "bag": { "contains": [
+          { "kind": "item", "id": "a" }, { "kind": "item", "id": "b", "data": { "value": 1 } }, { "kind": "item", "id": "c" }
+        ] } } },
+        { "root": "bag", "vessels": { "bag": { "contains": [
+          { "kind": "item", "id": "a" }, { "kind": "item", "id": "x", "data": { "value": 2 } }, { "kind": "item", "id": "c" }
+        ] } } }
+      ] },
+      "expected": { "outcome": "ok", "value": {
+        "applied": { "root": "bag", "vessels": { "bag": { "contains": [
+          { "kind": "item", "id": "a" }, { "kind": "item", "id": "x", "data": { "value": 2 } }, { "kind": "item", "id": "c" }
+        ] } } },
+        "restored": { "root": "bag", "vessels": { "bag": { "contains": [
+          { "kind": "item", "id": "a" }, { "kind": "item", "id": "b", "data": { "value": 1 } }, { "kind": "item", "id": "c" }
+        ] } } }
+      } }
+    },
+    {
+      "id": "fold-v1-diff-rejects-root-change",
+      "rule": "paperfold/v1#paperfold-v1-diff",
+      "subject": "paperfold/v1",
+      "operation": "diffLaws",
+      "input": { "args": [
+        { "root": "a", "vessels": { "a": {} } },
+        { "root": "b", "vessels": { "b": {} } }
+      ] },
+      "expected": { "outcome": "invalid", "includesErrorPaths": ["$.root"] }
+    },
+    {
+      "id": "fold-v1-diff-rejects-root-accepts-change",
+      "rule": "paperfold/v1#paperfold-v1-diff",
+      "subject": "paperfold/v1",
+      "operation": "diffLaws",
+      "input": { "args": [
+        { "root": "a", "vessels": { "a": { "accepts": [{ "kind": "item" }] } } },
+        { "root": "a", "vessels": { "a": { "accepts": [{ "kind": "status" }] } } }
+      ] },
+      "expected": { "outcome": "invalid", "includesErrorPaths": ["$.vessels.a.accepts"] }
+    }
+  ]
+}

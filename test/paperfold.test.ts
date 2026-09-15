@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { connect, deleteVessel, disconnect, insertElement, insertVessel } from "paperdoll";
-import type { Body, ProtocolError, Result } from "paperdoll";
+import type { Body, ContainedElement, ProtocolError, Result } from "paperdoll";
 import {
   PAPERFOLD_PROTOCOL,
   applyPatch,
@@ -50,6 +50,14 @@ function invertRoundTrip(a: Body, patch: PaperfoldDocument): void {
   const forward = expectOk(applyPatch(a, patch));
   const back = expectOk(applyPatch(forward, invertPatch(patch)));
   expect(back).toEqual(canonicalizeBody(a));
+}
+
+function containmentBody(contains: ContainedElement[]): Body {
+  return { root: "root", vessels: { root: { contains } } };
+}
+
+function mutableContents(body: Body): ContainedElement[] {
+  return body.vessels.root.contains as ContainedElement[];
 }
 
 // A minimal figure for topology entries: a—b connected, c free.
@@ -489,6 +497,156 @@ describe("law 1: soundness — apply(diff(a, b), a) = b", () => {
     const errors = expectErrors(diffBodies(sample(), b));
     expect(errors[0].path).toBe("$.vessels.body.accepts");
     expect(errors[0].message).toContain("root");
+  });
+});
+
+describe("diff containment granularity", () => {
+  it("represents one short payload edit in 500 elements with two detached entries", () => {
+    const source = containmentBody(
+      Array.from({ length: 500 }, (_, index) => ({ kind: "item", id: `item-${index}`, data: { value: "same" } }))
+    );
+    const target = structuredClone(source);
+    mutableContents(target)[250].data = { value: "edit" };
+    const sourceBefore = structuredClone(source);
+    const targetBefore = structuredClone(target);
+
+    const patch = expectOk(diffBodies(source, target));
+
+    expect(patch.patch).toEqual([
+      {
+        op: "removeElement",
+        vesselId: "root",
+        index: 250,
+        element: { kind: "item", id: "item-250", data: { value: "same" } }
+      },
+      {
+        op: "insertElement",
+        vesselId: "root",
+        index: 250,
+        element: { kind: "item", id: "item-250", data: { value: "edit" } }
+      }
+    ]);
+    expect(new TextEncoder().encode(JSON.stringify(patch)).byteLength).toBeLessThanOrEqual(512);
+    expect(expectOk(applyPatch(source, patch))).toEqual(canonicalizeBody(target));
+    invertRoundTrip(source, patch);
+    expect(source).toEqual(sourceBefore);
+    expect(target).toEqual(targetBefore);
+
+    const patchBeforeInputMutation = structuredClone(patch);
+    mutableContents(source)[250].data = { value: "source-mutated" };
+    mutableContents(target)[250].data = { value: "target-mutated" };
+    expect(patch).toEqual(patchBeforeInputMutation);
+
+    (patch.patch[0] as { element: ContainedElement }).element.data = { value: "patch-mutated" };
+    expect(mutableContents(source)[250].data).toEqual({ value: "source-mutated" });
+    expect(mutableContents(target)[250].data).toEqual({ value: "target-mutated" });
+  });
+
+  it("records a middle insertion at the preserved-prefix index", () => {
+    const source = containmentBody([
+      { kind: "item", id: "a" },
+      { kind: "item", id: "b" },
+      { kind: "item", id: "c" },
+      { kind: "item", id: "d" }
+    ]);
+    const target = structuredClone(source);
+    mutableContents(target).splice(2, 0, { kind: "item", id: "new" });
+
+    const patch = roundTrip(source, target);
+
+    expect(patch.patch).toEqual([
+      { op: "insertElement", vesselId: "root", index: 2, element: { kind: "item", id: "new" } }
+    ]);
+    invertRoundTrip(source, patch);
+  });
+
+  it("records a middle deletion at the preserved-prefix index", () => {
+    const source = containmentBody([
+      { kind: "item", id: "a" },
+      { kind: "item", id: "b" },
+      { kind: "item", id: "old" },
+      { kind: "item", id: "c" },
+      { kind: "item", id: "d" }
+    ]);
+    const target = structuredClone(source);
+    mutableContents(target).splice(2, 1);
+
+    const patch = roundTrip(source, target);
+
+    expect(patch.patch).toEqual([
+      { op: "removeElement", vesselId: "root", index: 2, element: { kind: "item", id: "old" } }
+    ]);
+    invertRoundTrip(source, patch);
+  });
+
+  it("removes a reordered middle before reinserting duplicate ids", () => {
+    const source = containmentBody([
+      { kind: "item", id: "a" },
+      { kind: "item", id: "b" },
+      { kind: "item", id: "c" }
+    ]);
+    const target = containmentBody([
+      { kind: "item", id: "b" },
+      { kind: "item", id: "a" },
+      { kind: "item", id: "c" }
+    ]);
+
+    const patch = roundTrip(source, target);
+
+    expect(patch.patch.map((entry) => [entry.op, "index" in entry ? entry.index : undefined])).toEqual([
+      ["removeElement", 1],
+      ["removeElement", 0],
+      ["insertElement", 0],
+      ["insertElement", 1]
+    ]);
+    expect(patch.patch.length).toBeLessThanOrEqual(6);
+    invertRoundTrip(source, patch);
+  });
+
+  it("matches repeated id-less elements by canonical position", () => {
+    const repeated: ContainedElement = { kind: "item", data: { value: "repeat" } };
+    const source = containmentBody([
+      structuredClone(repeated),
+      structuredClone(repeated),
+      { kind: "item", data: { value: "old" } },
+      structuredClone(repeated),
+      structuredClone(repeated)
+    ]);
+    const target = structuredClone(source);
+    mutableContents(target)[2] = { kind: "item", data: { value: "new" } };
+
+    const patch = roundTrip(source, target);
+
+    expect(patch.patch.map((entry) => [entry.op, "index" in entry ? entry.index : undefined])).toEqual([
+      ["removeElement", 2],
+      ["insertElement", 2]
+    ]);
+    invertRoundTrip(source, patch);
+  });
+
+  it("preserves canonically equal nested elements at both edges", () => {
+    const nested: ContainedElement = {
+      kind: "item",
+      body: { root: "inner", vessels: { inner: {} } }
+    };
+    const source = containmentBody([
+      nested,
+      { kind: "item", data: { value: "old" } },
+      structuredClone(nested)
+    ]);
+    const target = containmentBody([
+      { kind: "item", body: { root: "inner", vessels: { inner: { contains: [] } } } },
+      { kind: "item", data: { value: "new" } },
+      { kind: "item", body: { root: "inner", vessels: { inner: { ports: {} } } } }
+    ]);
+
+    const patch = roundTrip(source, target);
+
+    expect(patch.patch.map((entry) => [entry.op, "index" in entry ? entry.index : undefined])).toEqual([
+      ["removeElement", 1],
+      ["insertElement", 1]
+    ]);
+    invertRoundTrip(source, patch);
   });
 });
 

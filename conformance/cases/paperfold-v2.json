@@ -1,0 +1,236 @@
+{
+  "corpus": "paper-family-conformance/v2",
+  "cases": [
+    {
+      "id": "fold-v2-validates-scene-and-kernel-vocabulary",
+      "rule": "paperfold/v2#paperfold-v2-scene-patch-document",
+      "subject": "paperfold/v2",
+      "operation": "validateScenePatch",
+      "input": { "args": [{ "protocol": "paperfold/v2", "patch": [
+        { "op": "declareKind", "kindId": "link", "declaration": {} },
+        { "op": "deleteKind", "kindId": "link", "declaration": {} },
+        { "op": "insertBody", "name": "hero", "body": { "root": "core", "vessels": { "core": {} } } },
+        { "op": "deleteBody", "name": "hero", "body": { "root": "core", "vessels": { "core": {} } } },
+        { "op": "addRelation", "relation": { "kind": "link", "from": "hero/core", "to": "rival/core" } },
+        { "op": "removeRelation", "relation": { "kind": "link", "from": "hero/core", "to": "rival/core" } },
+        { "op": "connect", "body": "hero", "from": { "vessel": "a", "side": "right" }, "to": { "vessel": "b", "side": "left" }, "displaced": [] },
+        { "op": "disconnect", "body": "hero", "endpoint": { "vessel": "a", "side": "right" }, "removed": { "from": { "vessel": "a", "side": "right" }, "to": { "vessel": "b", "side": "left" } } },
+        { "op": "insertVessel", "body": "hero", "vesselId": "spare", "vessel": {}, "bridged": null },
+        { "op": "deleteVessel", "body": "hero", "vesselId": "spare", "vessel": {}, "collapsed": null },
+        { "op": "insertElement", "body": "hero", "vesselId": "bag", "element": { "kind": "item", "id": "x" }, "index": 0 },
+        { "op": "removeElement", "body": "hero", "vesselId": "bag", "index": 0, "element": { "kind": "item", "id": "x" } },
+        { "op": "moveElement", "body": "hero", "from": "bag", "index": 0, "to": "bag", "element": { "kind": "item", "id": "x" }, "toIndex": 0 }
+      ] }] },
+      "expected": { "outcome": "valid" }
+    },
+    {
+      "id": "fold-v2-rejects-malformed-path-and-address",
+      "rule": "paperfold/v2#paperfold-v2-scene-patch-document",
+      "subject": "paperfold/v2",
+      "operation": "validateScenePatch",
+      "input": { "args": [{ "protocol": "paperfold/v2", "patch": [
+        { "op": "insertElement", "body": "hero", "path": "outer/child/inner", "vesselId": "bag", "element": { "kind": "item" }, "index": 0 },
+        { "op": "removeRelation", "relation": { "kind": "link", "from": "hero", "to": "rival/core" } }
+      ] }] },
+      "expected": { "outcome": "invalid", "includesErrorPaths": ["$.patch.0.path", "$.patch.1.relation.from"] }
+    },
+    {
+      "id": "fold-v2-rejects-nonstring-ops",
+      "rule": "paperfold/v2#paperfold-v2-scene-patch-document",
+      "subject": "paperfold/v2",
+      "operation": "validateScenePatch",
+      "input": { "args": [{ "protocol": "paperfold/v2", "patch": [
+        { "op": [] }, { "op": {} }
+      ] }] },
+      "expected": { "outcome": "invalid", "includesErrorPaths": ["$.patch.0.op", "$.patch.1.op"] }
+    },
+    {
+      "id": "fold-v2-applies-all-scene-entry-types",
+      "rule": "paperfold/v2#paperfold-v2-application-semantics",
+      "subject": "paperfold/v2",
+      "operation": "applyScenePatch",
+      "input": { "args": [
+        { "protocol": "paperchain/v1", "bodies": {}, "kinds": {}, "relations": [] },
+        { "protocol": "paperfold/v2", "patch": [
+          { "op": "declareKind", "kindId": "link", "declaration": {} },
+          { "op": "insertBody", "name": "a", "body": { "root": "core", "vessels": { "core": {} } } },
+          { "op": "insertBody", "name": "b", "body": { "root": "core", "vessels": { "core": {} } } },
+          { "op": "addRelation", "relation": { "kind": "link", "from": "a/core", "to": "b/core" } },
+          { "op": "removeRelation", "relation": { "kind": "link", "from": "a/core", "to": "b/core" } },
+          { "op": "deleteBody", "name": "b", "body": { "root": "core", "vessels": { "core": {} } } },
+          { "op": "deleteBody", "name": "a", "body": { "root": "core", "vessels": { "core": {} } } },
+          { "op": "deleteKind", "kindId": "link", "declaration": {} }
+        ] }
+      ] },
+      "expected": { "outcome": "ok", "value": {
+        "protocol": "paperchain/v1", "bodies": {}, "kinds": {}, "relations": []
+      } }
+    },
+    {
+      "id": "fold-v2-applies-nested-kernel-entry",
+      "rule": "paperfold/v2#paperfold-v2-nested-body-paths",
+      "subject": "paperfold/v2",
+      "operation": "applyScenePatch",
+      "input": { "args": [
+        { "protocol": "paperchain/v1", "bodies": { "host": {
+          "root": "outer", "vessels": { "outer": { "contains": [{
+            "kind": "part", "id": "module", "body": {
+              "root": "inner", "vessels": { "inner": { "contains": [{ "kind": "item", "id": "gem" }] } }
+            }
+          }] } }
+        } }, "kinds": {}, "relations": [] },
+        { "protocol": "paperfold/v2", "patch": [{
+          "op": "removeElement", "body": "host", "path": "outer/module",
+          "vesselId": "inner", "index": 0, "element": { "kind": "item", "id": "gem" }
+        }] }
+      ] },
+      "expected": { "outcome": "ok", "value": {
+        "protocol": "paperchain/v1", "bodies": { "host": {
+          "root": "outer", "vessels": { "outer": { "contains": [{
+            "kind": "part", "id": "module", "body": { "root": "inner", "vessels": { "inner": {} } }
+          }] } }
+        } }, "kinds": {}, "relations": []
+      } }
+    },
+    {
+      "id": "fold-v2-refuses-stale-nested-path",
+      "rule": "paperfold/v2#paperfold-v2-nested-body-paths",
+      "subject": "paperfold/v2",
+      "operation": "applyScenePatch",
+      "input": { "args": [
+        { "protocol": "paperchain/v1", "bodies": { "host": {
+          "root": "outer", "vessels": { "outer": { "contains": [{ "kind": "part", "id": "other" }] } }
+        } }, "kinds": {}, "relations": [] },
+        { "protocol": "paperfold/v2", "patch": [{
+          "op": "insertElement", "body": "host", "path": "outer/module",
+          "vesselId": "inner", "element": { "kind": "item" }, "index": 0
+        }] }
+      ] },
+      "expected": { "outcome": "invalid", "includesErrorPaths": ["$.patch.0.path"] }
+    },
+    {
+      "id": "fold-v2-stale-symmetric-orientation",
+      "rule": "paperfold/v2#paperfold-v2-destruction-records",
+      "subject": "paperfold/v2",
+      "operation": "applyScenePatch",
+      "input": { "args": [
+        { "protocol": "paperchain/v1", "bodies": {
+          "a": { "root": "core", "vessels": { "core": {} } },
+          "b": { "root": "core", "vessels": { "core": {} } }
+        }, "kinds": { "link": { "symmetric": true } },
+          "relations": [{ "kind": "link", "from": "b/core", "to": "a/core" }] },
+        { "protocol": "paperfold/v2", "patch": [{
+          "op": "removeRelation", "relation": { "kind": "link", "from": "a/core", "to": "b/core" }
+        }] }
+      ] },
+      "expected": { "outcome": "invalid", "includesErrorPaths": ["$.patch.0.relation"] }
+    },
+    {
+      "id": "fold-v2-removes-stored-symmetric-orientation",
+      "rule": "paperfold/v2#paperfold-v2-destruction-records",
+      "subject": "paperfold/v2",
+      "operation": "applyScenePatch",
+      "input": { "args": [
+        { "protocol": "paperchain/v1", "bodies": {
+          "a": { "root": "core", "vessels": { "core": {} } },
+          "b": { "root": "core", "vessels": { "core": {} } }
+        }, "kinds": { "link": { "symmetric": true } },
+          "relations": [{ "kind": "link", "from": "b/core", "to": "a/core" }] },
+        { "protocol": "paperfold/v2", "patch": [{
+          "op": "removeRelation", "relation": { "kind": "link", "from": "b/core", "to": "a/core" }
+        }] }
+      ] },
+      "expected": { "outcome": "ok", "value": {
+        "protocol": "paperchain/v1", "bodies": {
+          "a": { "root": "core", "vessels": { "core": {} } },
+          "b": { "root": "core", "vessels": { "core": {} } }
+        }, "kinds": { "link": { "symmetric": true } }, "relations": []
+      } }
+    },
+    {
+      "id": "fold-v2-failure-is-atomic",
+      "rule": "paperfold/v2#paperfold-v2-application-semantics",
+      "subject": "paperfold/v2",
+      "operation": "applyScenePatch",
+      "input": { "args": [
+        { "protocol": "paperchain/v1", "bodies": {
+          "hero": { "root": "core", "vessels": { "core": {} } }
+        }, "kinds": {}, "relations": [] },
+        { "protocol": "paperfold/v2", "patch": [
+          { "op": "declareKind", "kindId": "temporary", "declaration": {} },
+          { "op": "deleteBody", "name": "hero", "body": { "root": "other", "vessels": { "other": {} } } }
+        ] }
+      ] },
+      "expected": { "outcome": "invalid", "includesErrorPaths": ["$.patch.1.body"] }
+    },
+    {
+      "id": "fold-v2-inverts-scene-entries-in-reverse",
+      "rule": "paperfold/v2#paperfold-v2-laws",
+      "subject": "paperfold/v2",
+      "operation": "invertScenePatch",
+      "input": { "args": [{ "protocol": "paperfold/v2", "patch": [
+        { "op": "deleteKind", "kindId": "link", "declaration": { "symmetric": true } },
+        { "op": "removeRelation", "relation": { "kind": "link", "from": "b/core", "to": "a/core" } }
+      ] }] },
+      "expected": { "outcome": "ok", "value": { "protocol": "paperfold/v2", "patch": [
+        { "op": "addRelation", "relation": { "kind": "link", "from": "b/core", "to": "a/core" } },
+        { "op": "declareKind", "kindId": "link", "declaration": { "symmetric": true } }
+      ] } }
+    },
+    {
+      "id": "fold-v2-compose-is-concatenation",
+      "rule": "paperfold/v2#paperfold-v2-laws",
+      "subject": "paperfold/v2",
+      "operation": "composeScenePatches",
+      "input": { "args": [
+        { "protocol": "paperfold/v2", "patch": [{ "op": "declareKind", "kindId": "link", "declaration": {} }] },
+        { "protocol": "paperfold/v2", "patch": [{ "op": "deleteKind", "kindId": "link", "declaration": {} }] }
+      ] },
+      "expected": { "outcome": "ok", "value": { "protocol": "paperfold/v2", "patch": [
+        { "op": "declareKind", "kindId": "link", "declaration": {} },
+        { "op": "deleteKind", "kindId": "link", "declaration": {} }
+      ] } }
+    },
+    {
+      "id": "fold-v2-diff-laws-preserve-symmetric-orientation",
+      "rule": "paperfold/v2#paperfold-v2-laws",
+      "subject": "paperfold/v2",
+      "operation": "diffSceneLaws",
+      "input": { "args": [
+        { "protocol": "paperchain/v1", "bodies": {
+          "a": { "root": "core", "vessels": { "core": {} } },
+          "b": { "root": "core", "vessels": { "core": {} } }
+        }, "kinds": { "link": { "symmetric": true } },
+          "relations": [{ "kind": "link", "from": "b/core", "to": "a/core" }] },
+        { "protocol": "paperchain/v1", "bodies": {
+          "a": { "root": "core", "vessels": { "core": { "contains": [{ "kind": "status", "type": "ready" }] } } },
+          "b": { "root": "core", "vessels": { "core": {} } }
+        }, "kinds": { "link": { "symmetric": true } },
+          "relations": [{ "kind": "link", "from": "a/core", "to": "b/core" }] }
+      ] },
+      "expected": { "outcome": "ok", "value": {
+        "applied": { "protocol": "paperchain/v1", "bodies": {
+          "a": { "root": "core", "vessels": { "core": { "contains": [{ "kind": "status", "type": "ready" }] } } },
+          "b": { "root": "core", "vessels": { "core": {} } }
+        }, "kinds": { "link": { "symmetric": true } },
+          "relations": [{ "kind": "link", "from": "a/core", "to": "b/core" }] },
+        "restored": { "protocol": "paperchain/v1", "bodies": {
+          "a": { "root": "core", "vessels": { "core": {} } },
+          "b": { "root": "core", "vessels": { "core": {} } }
+        }, "kinds": { "link": { "symmetric": true } },
+          "relations": [{ "kind": "link", "from": "b/core", "to": "a/core" }] }
+      } }
+    },
+    {
+      "id": "fold-v2-diff-propagates-body-domain",
+      "rule": "paperfold/v2#paperfold-v2-diff",
+      "subject": "paperfold/v2",
+      "operation": "diffSceneLaws",
+      "input": { "args": [
+        { "protocol": "paperchain/v1", "bodies": { "hero": { "root": "a", "vessels": { "a": {} } } }, "kinds": {}, "relations": [] },
+        { "protocol": "paperchain/v1", "bodies": { "hero": { "root": "b", "vessels": { "b": {} } } }, "kinds": {}, "relations": [] }
+      ] },
+      "expected": { "outcome": "invalid", "includesErrorPaths": ["$.bodies.hero.root"] }
+    }
+  ]
+}
