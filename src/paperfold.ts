@@ -442,8 +442,9 @@ export function applyEntry(body: Body, entry: PatchEntry, path: string): Result<
       return { ok: true, value: next };
     }
     case "moveElement": {
-      const sourceBefore = body.vessels[entry.from]?.contains ?? [];
-      const landing = entry.from === entry.to ? sourceBefore.length - 1 : (body.vessels[entry.to]?.contains ?? []).length;
+      const sourceBefore = (Object.hasOwn(body.vessels, entry.from) ? body.vessels[entry.from].contains : undefined) ?? [];
+      const destinationBefore = Object.hasOwn(body.vessels, entry.to) ? body.vessels[entry.to].contains : undefined;
+      const landing = entry.from === entry.to ? sourceBefore.length - 1 : (destinationBefore ?? []).length;
       const next = moveElement(body, entry.from, entry.index, entry.to);
       const moved = sourceBefore[entry.index] as ContainedElement;
       if (!elementsEqual(moved, entry.element)) {
@@ -618,7 +619,7 @@ export function diffBodies(a: Body, b: Body): Result<PaperfoldDocument, Protocol
 
   const replaced = new Set<VesselId>();
   for (const [vesselId, vessel] of Object.entries(a.vessels)) {
-    const counterpart = b.vessels[vesselId];
+    const counterpart = Object.hasOwn(b.vessels, vesselId) ? b.vessels[vesselId] : undefined;
     if (counterpart && !jsonEqual(vessel.accepts, counterpart.accepts)) replaced.add(vesselId);
   }
   if (replaced.has(a.root)) {
@@ -638,7 +639,7 @@ export function diffBodies(a: Body, b: Body): Result<PaperfoldDocument, Protocol
 
   // 1. deletions (removed vessels and accepts-replaced vessels)
   const toDelete = Object.keys(a.vessels)
-    .filter((vesselId) => !b.vessels[vesselId] || replaced.has(vesselId))
+    .filter((vesselId) => !Object.hasOwn(b.vessels, vesselId) || replaced.has(vesselId))
     .sort();
   for (const vesselId of toDelete) {
     const { body: next, vessel } = deleteVessel(current, vesselId);
@@ -660,7 +661,7 @@ export function diffBodies(a: Body, b: Body): Result<PaperfoldDocument, Protocol
   // 3. reconcile contains on kept vessels (wholesale replacement)
   for (const vesselId of Object.keys(current.vessels).sort()) {
     const have = current.vessels[vesselId].contains ?? [];
-    const want = b.vessels[vesselId].contains ?? [];
+    const want = (Object.hasOwn(b.vessels, vesselId) ? b.vessels[vesselId].contains : undefined) ?? [];
     if (have.length === want.length && have.every((element, index) => elementsEqual(element, want[index] as ContainedElement))) {
       continue;
     }
@@ -679,7 +680,7 @@ export function diffBodies(a: Body, b: Body): Result<PaperfoldDocument, Protocol
 
   // 4. insert vessels new in b (including replacements), portless
   const toInsert = Object.keys(b.vessels)
-    .filter((vesselId) => !current.vessels[vesselId])
+    .filter((vesselId) => !Object.hasOwn(current.vessels, vesselId))
     .sort();
   for (const vesselId of toInsert) {
     const source = b.vessels[vesselId];

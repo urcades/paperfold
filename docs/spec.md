@@ -340,17 +340,21 @@ The four laws of v1, restated over scenes; nothing is added and nothing
 weakened.
 
 1. **Soundness.** `applyScenePatch(a, diffScenes(a, b)) = b` in canonical
-   form, for any pair of valid scenes for which the diff succeeds. Sound, not
-   minimal, as always.
+   stored-state form, for any pair of valid scenes for which the diff succeeds.
+   This equality includes each relation's stored endpoint orientation, even
+   when its kind is symmetric. Sound, not minimal, as always.
 2. **Composition.** `composeScenePatches` is entry concatenation, and
-   applying the composition equals applying in sequence. Associative.
+   applying the composition equals applying in sequence whenever both sides
+   are defined. Concatenation is associative.
 3. **Partial invertibility.** `invertScenePatch` is body-free — computed from
    the entries alone. It reverses the sequence and inverts each entry:
    `declareKind` ↔ `deleteKind`, `insertBody` ↔ `deleteBody`,
    `addRelation` ↔ `removeRelation` (records swap roles as in v1), and kernel
-   entries invert through the v1 table with `body`/`path` re-stamped.
-   Sequence reversal alone settles the dependency order between kinds,
-   bodies, and relations — no topological reasoning is needed.
+   entries invert through the v1 table with `body`/`path` re-stamped. For a
+   patch lawful at a scene, applying that patch and then its inverse restores
+   the canonical starting scene. Sequence reversal alone settles the
+   dependency order between kinds, bodies, and relations — no topological
+   reasoning is needed.
 4. **Staleness.** Every destruction record — the scene entries' above, and
    the kernel records inside targeted bodies — is checked against what the
    operation actually reports; any mismatch, a missing scene body, or an
@@ -396,11 +400,14 @@ cleanup, so diffed patches never need hand-repair.
 A scene is canonical when every body (at the scene level and recursively
 through embeddings) is canonical in the v1 sense, and the relation table is
 sorted by `(kind, from, to)`. paperchain's relations are a flat table whose
-order carries no meaning, so a remove/re-add cycle must not read as change;
-sorting is the only normalization relations need. Kinds have no
-non-canonical spellings, and scene addresses are already canonical strings.
-`applyScenePatch` returns canonical scenes, and all staleness comparisons of
-bodies are canonical.
+order carries no meaning, so sorting prevents a remove/re-add cycle from
+changing table order. Sorting is the only normalization relations need. It
+does not swap a symmetric relation's endpoints: stored orientation remains
+part of canonical scene equality because `removeRelation` reports and checks
+that exact stored record. Symmetric equivalence governs relation operations,
+not stored-state equality. Kinds have no non-canonical spellings, and scene
+addresses are already canonical strings. `applyScenePatch` returns canonical
+scenes, and all staleness comparisons of bodies are canonical.
 
 ## Diff
 
@@ -409,8 +416,8 @@ scene, so each entry's records are computed from the state that entry will
 actually apply against, and each phase's local-law preconditions hold. Seven
 phases, in order:
 
-1. **remove relations** absent from `b` — including every relation of a kind
-   whose declaration changed;
+1. **remove relations** whose exact stored `(kind, from, to)` tuple is absent
+   from `b` — including every relation of a kind whose declaration changed;
 2. **delete bodies** absent from `b` (their relations went in 1, so
    `deleteBody`'s local law holds);
 3. **delete kinds** absent from `b` or re-declared;
@@ -418,7 +425,14 @@ phases, in order:
 5. **insert bodies** new in `b`;
 6. per kept body that differs, the **v1 body diff**, its entries stamped with
    the body name;
-7. **add relations** of `b` not yet present.
+7. **add exact stored relation tuples** of `b` not yet present.
+
+Consequently, reversing the stored endpoints of a symmetric relation emits a
+`removeRelation` with the old stored record followed by `addRelation` with the
+new orientation. The two relations have the same symmetric meaning, but the
+cycle is required for soundness against canonical stored-state equality and
+for later destruction-record checks. Reversing an asymmetric relation remains
+a change in both meaning and storage.
 
 **The kind-re-declaration cycling rule.** A changed kind declaration reifies
 as `deleteKind` + `declareKind` — there is no update operation to reify, as

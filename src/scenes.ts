@@ -339,10 +339,10 @@ function resolveBodyPath(
     const vesselId = segments[position];
     const elementId = segments[position + 1];
     const prefix = segments.slice(0, position + 2).join("/");
-    const vessel = scope.vessels[vesselId];
-    if (!vessel) {
+    if (!Object.hasOwn(scope.vessels, vesselId)) {
       return staleAt(errorPath, `path segment "${prefix}" does not resolve: no vessel "${vesselId}"`);
     }
+    const vessel = scope.vessels[vesselId];
     const elementIndex = (vessel.contains ?? []).findIndex((element) => element.id === elementId);
     if (elementIndex === -1) {
       return staleAt(errorPath, `path segment "${prefix}" does not resolve: no element "${elementId}" in "${vesselId}"`);
@@ -452,10 +452,10 @@ function applyScenePatchEntry(scene: Scene, entry: ScenePatchEntry, path: string
 }
 
 function applyKernelEntry(scene: Scene, entry: SceneKernelEntry, path: string): Result<Scene, ProtocolError[]> {
-  const target = scene.bodies[entry.body];
-  if (!target) {
+  if (!Object.hasOwn(scene.bodies, entry.body)) {
     return staleAt(`${path}.body`, `scene has no body "${entry.body}"`);
   }
+  const target = scene.bodies[entry.body];
 
   let inner = target;
   let hops: PathHop[] = [];
@@ -524,13 +524,15 @@ export function composeScenePatches(a: ScenePatchDocument, b: ScenePatchDocument
 // Diff (law 1)
 //
 // Sound, not minimal: applyScenePatch(a, diffScenes(a, b)) yields exactly b
-// with every body canonical. The strategy tracks a live intermediate scene so
-// each entry's records are computed from the state it will apply against,
-// and each phase's local-law preconditions hold:
+// in canonical form, including each relation's stored endpoint orientation.
+// The strategy tracks a live intermediate scene so each entry's records are
+// computed from the state it will apply against, and each phase's local-law
+// preconditions hold:
 //
-//   1. remove relations absent from b — including every relation of a kind
-//      whose declaration changed (declaration changes reify as deleteKind +
-//      declareKind, and deleteKind refuses while relations use the kind);
+//   1. remove relations whose exact stored tuple is absent from b — including
+//      every relation of a kind whose declaration changed (declaration changes
+//      reify as deleteKind + declareKind, and deleteKind refuses while
+//      relations use the kind);
 //   2. delete bodies absent from b (their relations went in 1);
 //   3. delete kinds absent from b or re-declared;
 //   4. declare kinds new in b or re-declared;
@@ -550,7 +552,7 @@ export function diffScenes(a: Scene, b: Scene): Result<ScenePatchDocument, Proto
 
   const changedKinds = new Set<KindId>();
   for (const [kindId, declaration] of Object.entries(a.kinds)) {
-    const counterpart = b.kinds[kindId];
+    const counterpart = Object.hasOwn(b.kinds, kindId) ? b.kinds[kindId] : undefined;
     if (counterpart !== undefined && !jsonEqual(declaration, counterpart)) changedKinds.add(kindId);
   }
 
@@ -560,9 +562,8 @@ export function diffScenes(a: Scene, b: Scene): Result<ScenePatchDocument, Proto
   // 1. remove relations absent from b, or whose kind is removed/re-declared
   const keptInB = (relation: Relation): boolean => {
     if (changedKinds.has(relation.kind)) return false;
-    const declaration = b.kinds[relation.kind];
-    if (declaration === undefined) return false;
-    return b.relations.some((candidate) => sameRelation(candidate, relation, declaration.symmetric === true));
+    if (!Object.hasOwn(b.kinds, relation.kind)) return false;
+    return b.relations.some((candidate) => sameStoredRelation(candidate, relation));
   };
   const toRemove = current.relations.filter((relation) => !keptInB(relation)).sort(relationSort);
   for (const relation of toRemove) {
@@ -573,7 +574,7 @@ export function diffScenes(a: Scene, b: Scene): Result<ScenePatchDocument, Proto
 
   // 2. delete bodies absent from b
   for (const name of Object.keys(current.bodies).sort()) {
-    if (b.bodies[name]) continue;
+    if (Object.hasOwn(b.bodies, name)) continue;
     const { scene: next, body } = deleteBody(current, name);
     entries.push({ op: "deleteBody", name, body: canonicalizeBody(body) });
     current = next;
@@ -581,7 +582,7 @@ export function diffScenes(a: Scene, b: Scene): Result<ScenePatchDocument, Proto
 
   // 3. delete kinds absent from b or re-declared
   for (const kindId of Object.keys(current.kinds).sort()) {
-    if (b.kinds[kindId] !== undefined && !changedKinds.has(kindId)) continue;
+    if (Object.hasOwn(b.kinds, kindId) && !changedKinds.has(kindId)) continue;
     const { scene: next, declaration } = deleteKind(current, kindId);
     entries.push({ op: "deleteKind", kindId, declaration: structuredClone(declaration) });
     current = next;
@@ -589,7 +590,7 @@ export function diffScenes(a: Scene, b: Scene): Result<ScenePatchDocument, Proto
 
   // 4. declare kinds new in b or re-declared
   for (const kindId of Object.keys(b.kinds).sort()) {
-    if (current.kinds[kindId] !== undefined) continue;
+    if (Object.hasOwn(current.kinds, kindId)) continue;
     const declaration = structuredClone(b.kinds[kindId]);
     entries.push({ op: "declareKind", kindId, declaration: structuredClone(declaration) });
     current = declareKind(current, kindId, declaration);
@@ -597,7 +598,7 @@ export function diffScenes(a: Scene, b: Scene): Result<ScenePatchDocument, Proto
 
   // 5. insert bodies new in b
   for (const name of Object.keys(b.bodies).sort()) {
-    if (current.bodies[name]) continue;
+    if (Object.hasOwn(current.bodies, name)) continue;
     const body = canonicalizeBody(b.bodies[name]);
     entries.push({ op: "insertBody", name, body: structuredClone(body) });
     current = insertBody(current, name, body);
@@ -605,7 +606,7 @@ export function diffScenes(a: Scene, b: Scene): Result<ScenePatchDocument, Proto
 
   // 6. per-kept-body kernel diff
   for (const name of Object.keys(current.bodies).sort()) {
-    const want = b.bodies[name];
+    const want = Object.hasOwn(b.bodies, name) ? b.bodies[name] : undefined;
     const have = current.bodies[name];
     if (!want || have === want) continue;
     const diff = diffBodies(have, want);
@@ -624,14 +625,9 @@ export function diffScenes(a: Scene, b: Scene): Result<ScenePatchDocument, Proto
     current = { ...current, bodies: { ...current.bodies, [name]: canonicalizeBody(want) } };
   }
 
-  // 7. add relations of b not yet present
+  // 7. add exact stored relation tuples of b not yet present
   const missing = b.relations
-    .filter(
-      (relation) =>
-        !current.relations.some((candidate) =>
-          sameRelation(candidate, relation, b.kinds[relation.kind]?.symmetric === true)
-        )
-    )
+    .filter((relation) => !current.relations.some((candidate) => sameStoredRelation(candidate, relation)))
     .sort(relationSort);
   for (const relation of missing) {
     entries.push({ op: "addRelation", relation: structuredClone(relation) });
@@ -641,10 +637,8 @@ export function diffScenes(a: Scene, b: Scene): Result<ScenePatchDocument, Proto
   return { ok: true, value: { protocol: PAPERFOLD_SCENE_PROTOCOL, patch: entries } };
 }
 
-function sameRelation(a: Relation, b: Relation, symmetric: boolean): boolean {
-  if (a.kind !== b.kind) return false;
-  if (a.from === b.from && a.to === b.to) return true;
-  return symmetric && a.from === b.to && a.to === b.from;
+function sameStoredRelation(a: Relation, b: Relation): boolean {
+  return a.kind === b.kind && a.from === b.from && a.to === b.to;
 }
 
 // Canonical form: every body canonical, and the relation table sorted by
