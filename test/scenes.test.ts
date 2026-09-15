@@ -16,6 +16,8 @@ import {
 } from "../src/index.js";
 import { sampleScene } from "./sample-scene.js";
 
+const CONSTRUCTOR_ID: string = "constructor";
+
 function patchOf(...entries: ScenePatchEntry[]): ScenePatchDocument {
   return { protocol: PAPERFOLD_SCENE_PROTOCOL, patch: entries };
 }
@@ -197,6 +199,67 @@ describe("applyScenePatch", () => {
     expect(errors[0].message).toContain('back/lost-pack');
   });
 
+  it("treats an inherited constructor property as a missing path vessel", () => {
+    const errors = expectErrors(
+      applyScenePatch(
+        sampleScene(),
+        patchOf({
+          op: "insertElement",
+          body: "alice",
+          path: "constructor/pack",
+          vesselId: "inside",
+          element: { kind: "item", id: "coin" },
+          index: 0
+        })
+      )
+    );
+    expect(errors).toEqual([
+      {
+        path: "$.patch.0.path",
+        message: 'stale patch: path segment "constructor/pack" does not resolve: no vessel "constructor".'
+      }
+    ]);
+  });
+
+  it("resolves an explicitly declared constructor path vessel", () => {
+    const scene: Scene = {
+      protocol: "paperchain/v1",
+      bodies: {
+        alice: {
+          root: "constructor",
+          vessels: {
+            constructor: {
+              contains: [
+                {
+                  kind: "item",
+                  id: "pack",
+                  body: { root: "inside", vessels: { inside: {} } }
+                }
+              ]
+            }
+          }
+        }
+      },
+      kinds: {},
+      relations: []
+    };
+    const applied = expectOk(
+      applyScenePatch(
+        scene,
+        patchOf({
+          op: "insertElement",
+          body: "alice",
+          path: "constructor/pack",
+          vesselId: "inside",
+          element: { kind: "item", id: "coin" },
+          index: 0
+        })
+      )
+    );
+    const pack = applied.bodies.alice.vessels[CONSTRUCTOR_ID].contains![0];
+    expect(pack.body!.vessels.inside.contains).toEqual([{ kind: "item", id: "coin" }]);
+  });
+
   it("reports a missing scene body as stale", () => {
     const errors = expectErrors(
       applyScenePatch(
@@ -206,6 +269,48 @@ describe("applyScenePatch", () => {
     );
     expect(errors[0].path).toBe("$.patch.0.body");
     expect(errors[0].message).toContain("stale patch");
+  });
+
+  it("treats an inherited constructor property as a missing scene body", () => {
+    const errors = expectErrors(
+      applyScenePatch(
+        sampleScene(),
+        patchOf({
+          op: "insertElement",
+          body: "constructor",
+          vesselId: "head",
+          element: { kind: "item", id: "crown" },
+          index: 0
+        })
+      )
+    );
+    expect(errors).toEqual([
+      { path: "$.patch.0.body", message: 'stale patch: scene has no body "constructor".' }
+    ]);
+  });
+
+  it("allows an explicitly declared constructor scene body", () => {
+    const scene: Scene = {
+      protocol: "paperchain/v1",
+      bodies: {
+        [CONSTRUCTOR_ID]: { root: "head", vessels: { head: {} } }
+      },
+      kinds: {},
+      relations: []
+    };
+    const applied = expectOk(
+      applyScenePatch(
+        scene,
+        patchOf({
+          op: "insertElement",
+          body: "constructor",
+          vesselId: "head",
+          element: { kind: "item", id: "crown" },
+          index: 0
+        })
+      )
+    );
+    expect(applied.bodies[CONSTRUCTOR_ID].vessels.head.contains).toEqual([{ kind: "item", id: "crown" }]);
   });
 
   it("converts paperchain throws into path-annotated errors", () => {
@@ -396,6 +501,165 @@ describe("diffScenes (law 1)", () => {
       { kind: "holding-hands", from: "alice/right-hand", to: "bob/left-hand" }
     ];
     sceneRoundTrip(a, b);
+  });
+
+  it("reifies a symmetric relation stored-orientation change as remove then add", () => {
+    const a = sampleScene();
+    const b = sampleScene();
+    b.relations[1] = {
+      kind: "holding-hands",
+      from: "bob/left-hand",
+      to: "alice/right-hand"
+    };
+
+    const patch = expectOk(diffScenes(a, b));
+
+    expect(patch.patch).toEqual([
+      {
+        op: "removeRelation",
+        relation: { kind: "holding-hands", from: "alice/right-hand", to: "bob/left-hand" }
+      },
+      {
+        op: "addRelation",
+        relation: { kind: "holding-hands", from: "bob/left-hand", to: "alice/right-hand" }
+      }
+    ]);
+    expect(expectOk(applyScenePatch(a, patch))).toEqual(canonicalizeScene(b));
+  });
+
+  it("inverts a symmetric stored-orientation diff back to the original storage", () => {
+    const a = sampleScene();
+    const b = sampleScene();
+    b.relations[1] = {
+      kind: "holding-hands",
+      from: "bob/left-hand",
+      to: "alice/right-hand"
+    };
+    const patch = expectOk(diffScenes(a, b));
+
+    const forward = expectOk(applyScenePatch(a, patch));
+    expect(forward).toEqual(canonicalizeScene(b));
+    const back = expectOk(applyScenePatch(forward, invertScenePatch(patch)));
+    expect(back).toEqual(canonicalizeScene(a));
+  });
+
+  it("composes an orientation change with a later removal using the new stored record", () => {
+    const a = sampleScene();
+    const b = sampleScene();
+    b.relations[1] = {
+      kind: "holding-hands",
+      from: "bob/left-hand",
+      to: "alice/right-hand"
+    };
+    const c = structuredClone(b);
+    c.relations = c.relations.filter((relation) => relation.kind !== "holding-hands");
+
+    const orient = expectOk(diffScenes(a, b));
+    const remove = expectOk(diffScenes(b, c));
+
+    expect(remove.patch).toEqual([
+      {
+        op: "removeRelation",
+        relation: { kind: "holding-hands", from: "bob/left-hand", to: "alice/right-hand" }
+      }
+    ]);
+    const composed = composeScenePatches(orient, remove);
+    expect(expectOk(applyScenePatch(a, composed))).toEqual(canonicalizeScene(c));
+  });
+
+  it("keeps asymmetric endpoint reversal as a semantic relation change", () => {
+    const a = sampleScene();
+    const b = sampleScene();
+    b.relations[0] = {
+      kind: "wields",
+      from: "alice/left-hand/steel-dagger",
+      to: "alice/left-hand"
+    };
+
+    const patch = expectOk(diffScenes(a, b));
+
+    expect(patch.patch).toEqual([
+      {
+        op: "removeRelation",
+        relation: { kind: "wields", from: "alice/left-hand", to: "alice/left-hand/steel-dagger" }
+      },
+      {
+        op: "addRelation",
+        relation: { kind: "wields", from: "alice/left-hand/steel-dagger", to: "alice/left-hand" }
+      }
+    ]);
+    expect(expectOk(applyScenePatch(a, patch))).toEqual(canonicalizeScene(b));
+  });
+
+  it("ignores relation-table order while preserving stored endpoint order", () => {
+    const a = sampleScene();
+    const b = sampleScene();
+    b.relations.reverse();
+
+    expect(expectOk(diffScenes(a, b)).patch).toEqual([]);
+  });
+
+  it("round-trips a stored-orientation change mixed with body edits and reordered relations", () => {
+    const a = sampleScene();
+    const b = sampleScene();
+    b.bodies.bob.vessels.head.contains = [
+      ...(b.bodies.bob.vessels.head.contains ?? []),
+      { kind: "item", type: "head", id: "crown" }
+    ];
+    b.relations = [
+      { kind: "holding-hands", from: "bob/left-hand", to: "alice/right-hand" },
+      structuredClone(b.relations[0])
+    ];
+
+    const patch = sceneRoundTrip(a, b);
+
+    expect(patch.patch.filter((entry) => entry.op === "removeRelation")).toEqual([
+      {
+        op: "removeRelation",
+        relation: { kind: "holding-hands", from: "alice/right-hand", to: "bob/left-hand" }
+      }
+    ]);
+    expect(patch.patch.some((entry) => entry.op === "insertElement" && entry.body === "bob")).toBe(true);
+  });
+
+  it("inserts explicitly declared constructor body and kind keys", () => {
+    const a = sampleScene();
+    const b = sampleScene();
+    b.bodies[CONSTRUCTOR_ID] = { root: "head", vessels: { head: {} } };
+    b.kinds[CONSTRUCTOR_ID] = { symmetric: true };
+
+    const patch = sceneRoundTrip(a, b);
+
+    expect(patch.patch).toContainEqual({
+      op: "declareKind",
+      kindId: "constructor",
+      declaration: { symmetric: true }
+    });
+    expect(patch.patch).toContainEqual({
+      op: "insertBody",
+      name: "constructor",
+      body: { root: "head", vessels: { head: {} } }
+    });
+  });
+
+  it("deletes explicitly declared constructor body and kind keys", () => {
+    const a = sampleScene();
+    a.bodies[CONSTRUCTOR_ID] = { root: "head", vessels: { head: {} } };
+    a.kinds[CONSTRUCTOR_ID] = { symmetric: true };
+    const b = sampleScene();
+
+    const patch = sceneRoundTrip(a, b);
+
+    expect(patch.patch).toContainEqual({
+      op: "deleteBody",
+      name: "constructor",
+      body: { root: "head", vessels: { head: {} } }
+    });
+    expect(patch.patch).toContainEqual({
+      op: "deleteKind",
+      kindId: "constructor",
+      declaration: { symmetric: true }
+    });
   });
 
   it("round-trips body addition and removal with their relations", () => {

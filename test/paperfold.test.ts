@@ -17,6 +17,8 @@ import {
 } from "../src/index";
 import { ALICE_BODY, SAMPLE_BODY } from "./sample-body";
 
+const CONSTRUCTOR_ID: string = "constructor";
+
 function sample(): Body {
   return structuredClone(SAMPLE_BODY);
 }
@@ -378,6 +380,46 @@ describe("law 1: soundness — apply(diff(a, b), a) = b", () => {
       { id: "elbow", at: { vessel: "body", side: "right" } }
     ).body;
     roundTrip(a, b);
+  });
+
+  it("deletes an explicitly declared constructor vessel instead of finding an inherited target", () => {
+    const a: Body = {
+      root: "torso",
+      vessels: {
+        torso: { ports: { right: { vessel: "constructor", side: "left" } } },
+        [CONSTRUCTOR_ID]: { ports: { left: { vessel: "torso", side: "right" } } }
+      }
+    };
+    const b: Body = { root: "torso", vessels: { torso: {} } };
+
+    const patch = roundTrip(a, b);
+
+    expect(patch.patch).toContainEqual({
+      op: "deleteVessel",
+      vesselId: "constructor",
+      vessel: { ports: { left: { vessel: "torso", side: "right" } } },
+      collapsed: null
+    });
+  });
+
+  it("inserts an explicitly declared constructor vessel instead of finding an inherited target", () => {
+    const a: Body = { root: "torso", vessels: { torso: {} } };
+    const b: Body = {
+      root: "torso",
+      vessels: {
+        torso: { ports: { right: { vessel: "constructor", side: "left" } } },
+        [CONSTRUCTOR_ID]: { ports: { left: { vessel: "torso", side: "right" } } }
+      }
+    };
+
+    const patch = roundTrip(a, b);
+
+    expect(patch.patch).toContainEqual({
+      op: "insertVessel",
+      vesselId: "constructor",
+      vessel: {},
+      bridged: null
+    });
   });
 
   it("port rewiring", () => {
