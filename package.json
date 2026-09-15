@@ -30,6 +30,7 @@
     "dist",
     "docs",
     "schema",
+    "bench",
     "README.md",
     "LICENSE"
   ],
@@ -43,6 +44,7 @@
     "typescript"
   ],
   "scripts": {
+    "bench:diff": "node bench/diff-baseline.mjs",
     "build": "rm -rf dist && tsc -p tsconfig.build.json",
     "prepack": "npm run typecheck && npm test && npm run build",
     "typecheck": "tsc --noEmit",

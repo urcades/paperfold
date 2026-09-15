@@ -600,7 +600,7 @@ export function composePatches(a: PaperfoldDocument, b: PaperfoldDocument): Pape
 //   1. delete vessels absent from b, and vessels whose accepts changed
 //      (no kernel operation edits accepts, so those reify as replacement);
 //   2. disconnect every remaining connection not present in b;
-//   3. wholesale-replace the contains of kept vessels that differ;
+//   3. replace only the changed middle of kept vessels' contains;
 //   4. insert vessels new in b (including replacements), portless;
 //   5. connect each connection of b not yet present, once, canonically.
 
@@ -658,24 +658,10 @@ export function diffBodies(a: Body, b: Body): Result<PaperfoldDocument, Protocol
     current = next;
   }
 
-  // 3. reconcile contains on kept vessels (wholesale replacement)
+  // 3. reconcile contains on kept vessels
   for (const vesselId of Object.keys(current.vessels).sort()) {
-    const have = current.vessels[vesselId].contains ?? [];
     const want = (Object.hasOwn(b.vessels, vesselId) ? b.vessels[vesselId].contains : undefined) ?? [];
-    if (have.length === want.length && have.every((element, index) => elementsEqual(element, want[index] as ContainedElement))) {
-      continue;
-    }
-    for (let index = have.length - 1; index >= 0; index -= 1) {
-      const { body: next, element } = removeElement(current, vesselId, index);
-      entries.push({ op: "removeElement", vesselId, index, element });
-      current = next;
-    }
-    want.forEach((element, index) => {
-      const record = canonicalizeElement(element);
-      const next = insertElement(current, vesselId, record, index);
-      entries.push({ op: "insertElement", vesselId, element: structuredClone(record), index });
-      current = next;
-    });
+    current = reconcileContains(current, vesselId, want, entries);
   }
 
   // 4. insert vessels new in b (including replacements), portless
@@ -710,6 +696,46 @@ export function diffBodies(a: Body, b: Body): Result<PaperfoldDocument, Protocol
   }
 
   return { ok: true, value: { protocol: PAPERFOLD_PROTOCOL, patch: entries } };
+}
+
+function reconcileContains(
+  current: Body,
+  vesselId: VesselId,
+  wanted: readonly ContainedElement[],
+  entries: PatchEntry[]
+): Body {
+  const present = current.vessels[vesselId].contains ?? [];
+  const sharedLength = Math.min(present.length, wanted.length);
+
+  let prefixLength = 0;
+  while (prefixLength < sharedLength && elementsEqual(present[prefixLength], wanted[prefixLength])) {
+    prefixLength += 1;
+  }
+
+  let suffixLength = 0;
+  while (
+    suffixLength < present.length - prefixLength &&
+    suffixLength < wanted.length - prefixLength &&
+    elementsEqual(present[present.length - suffixLength - 1], wanted[wanted.length - suffixLength - 1])
+  ) {
+    suffixLength += 1;
+  }
+
+  let next = current;
+  for (let index = present.length - suffixLength - 1; index >= prefixLength; index -= 1) {
+    const removed = removeElement(next, vesselId, index);
+    entries.push({ op: "removeElement", vesselId, index, element: removed.element });
+    next = removed.body;
+  }
+
+  const wantedMiddleEnd = wanted.length - suffixLength;
+  for (let index = prefixLength; index < wantedMiddleEnd; index += 1) {
+    const record = canonicalizeElement(wanted[index]);
+    next = insertElement(next, vesselId, record, index);
+    entries.push({ op: "insertElement", vesselId, element: structuredClone(record), index });
+  }
+
+  return next;
 }
 
 // Canonical form
@@ -835,4 +861,3 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function isSide(value: unknown): value is Side {
   return typeof value === "string" && SIDE_SET.has(value);
 }
-

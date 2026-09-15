@@ -1,0 +1,70 @@
+{
+  "schema": "paperfold-diff-benchmark/v1",
+  "measuredAt": "2026-09-15T03:46:25.247Z",
+  "node": "v22.23.1",
+  "nodeMajor": 22,
+  "platform": "darwin",
+  "arch": "arm64",
+  "warmupIterations": 10,
+  "sampleCount": 21,
+  "statistic": "median per-operation wall time across samples after warmup",
+  "cases": [
+    {
+      "elements": 10,
+      "changed": 1,
+      "iterationsPerSample": 10,
+      "medianDiffMs": 0.05953760000000017,
+      "medianApplyMs": 0.0668457999999994,
+      "entries": 20,
+      "bytes": 2337,
+      "sound": true,
+      "inverseSound": true,
+      "inputsUnchanged": true,
+      "cloneMeasurement": {
+        "scope": "paperdoll containment kernel full-body clone calls and serialized input-byte copy-work proxy during diff; apply repeats equivalent work for this fixture; not a heap-allocation measurement",
+        "diffBodyCloneCalls": 20,
+        "diffBodyCloneInputBytes": 6381,
+        "applyBodyCloneCalls": 20,
+        "applyBodyCloneInputBytes": 6381
+      }
+    },
+    {
+      "elements": 100,
+      "changed": 1,
+      "iterationsPerSample": 5,
+      "medianDiffMs": 1.4754500000000064,
+      "medianApplyMs": 1.4906999999999926,
+      "entries": 200,
+      "bytes": 23397,
+      "sound": true,
+      "inverseSound": true,
+      "inputsUnchanged": true,
+      "cloneMeasurement": {
+        "scope": "paperdoll containment kernel full-body clone calls and serialized input-byte copy-work proxy during diff; apply repeats equivalent work for this fixture; not a heap-allocation measurement",
+        "diffBodyCloneCalls": 200,
+        "diffBodyCloneInputBytes": 557901,
+        "applyBodyCloneCalls": 200,
+        "applyBodyCloneInputBytes": 557901
+      }
+    },
+    {
+      "elements": 500,
+      "changed": 1,
+      "iterationsPerSample": 2,
+      "medianDiffMs": 30.71420850000004,
+      "medianApplyMs": 30.768103999999994,
+      "entries": 1000,
+      "bytes": 118597,
+      "sound": true,
+      "inverseSound": true,
+      "inputsUnchanged": true,
+      "cloneMeasurement": {
+        "scope": "paperdoll containment kernel full-body clone calls and serialized input-byte copy-work proxy during diff; apply repeats equivalent work for this fixture; not a heap-allocation measurement",
+        "diffBodyCloneCalls": 1000,
+        "diffBodyCloneInputBytes": 13949101,
+        "applyBodyCloneCalls": 1000,
+        "applyBodyCloneInputBytes": 13949101
+      }
+    }
+  ]
+}

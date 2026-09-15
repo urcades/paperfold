@@ -86,7 +86,7 @@ All operations are pure; inputs are never mutated.
 - `applyPatch(body, patch)` — applies entries sequentially through the kernel's own operations, checks every destruction record (law 4), then validates the final body against all eight kernel laws. Returns `Result<Body, ProtocolError[]>`: the new body in canonical form, or all errors and no body. Atomic by purity.
 - `invertPatch(patch)` — returns the inverse patch document, body-free (law 3). One entry may invert to several: a `deleteVessel` inverts to an `insertVessel` plus one `connect` per severed port.
 - `composePatches(p, q)` — returns the concatenated patch document (law 2).
-- `diffBodies(a, b)` — returns a patch document such that applying it to `a` yields `b`, or precise errors (`Result`). Requires equal roots: no kernel operation changes a body's root, so no reified patch can either. Assumes both bodies are kernel-valid; a body the kernel would reject propagates the kernel's thrown error instead of returning `Result` errors.
+- `diffBodies(a, b)` — returns a patch document such that applying it to `a` yields `b`, or precise errors (`Result`). Its partial domain requires valid bodies, equal roots, and unchanged root `accepts`. For kept vessels it preserves the longest canonically equal `contains` prefix and suffix and replaces only the changed middle.
 - `parsePatch` / `validatePatch` / `assertPatch` — strict structural validation with path-annotated errors (`$.patch.2.from.side: ...`); unknown keys anywhere are rejected; `parsePatch` returns a deep copy.
 - `canonicalizeBody(body)` — the canonical form the laws are stated over: empty `ports`/`contains` (kernel residue) dropped, recursively; `accepts` untouched (sealed ≠ open).
 
@@ -101,7 +101,7 @@ Scene targeting is paperfold/v2 — see below.
 
 ## Portability
 
-The protocol is not the TypeScript library — it is the document format plus the laws. [`schema/paperfold-v1.schema.json`](schema/paperfold-v1.schema.json) is a JSON Schema (2020-12) capturing the structural laws; the four semantic laws beyond schema expressiveness are specified in [`docs/spec.md`](docs/spec.md). Any language can validate and apply paperfold documents against any paper-doll/v3 implementation.
+The protocol is the document format plus the laws in the current normative [`paperfold/v1 and paperfold/v2 specification`](docs/spec.md). [`schema/paperfold-v1.schema.json`](schema/paperfold-v1.schema.json) and [`schema/paperfold-v2.schema.json`](schema/paperfold-v2.schema.json) are structural JSON Schema (2020-12) companions, not complete specifications. Package versions and dependency floors are listed in the [`paper* family compatibility matrix`](https://github.com/urcades/paperdoll/blob/main/docs/family-compatibility.md). Any language can validate and apply paperfold documents against conforming paperdoll and paperchain implementations.
 
 ## API
 
@@ -115,7 +115,7 @@ Validation is strict: unknown keys anywhere in a patch document are rejected. `C
 
 ## Design Notes
 
-See [`docs/rfc-paperfold.md`](docs/rfc-paperfold.md) for the pre-RFC lineage (why a sibling and not a kernel extension, the reification rule, the deferred commutation law), and [`docs/spec.md`](docs/spec.md) for the hardened v1 specification with resolved micro-decisions.
+See [`docs/spec.md`](docs/spec.md) for normative behavior. [`docs/rfc-paperfold.md`](docs/rfc-paperfold.md) is the historical pre-RFC lineage.
 
 ## Scene Patches (paperfold/v2)
 
