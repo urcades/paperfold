@@ -11,6 +11,7 @@ precisely enough to be applied, composed, inverted, and refused. This
 specification is language-independent: the document format plus the laws
 below are the protocol; the TypeScript library is one implementation.
 
+<a id="paperfold-v1-operation-domains"></a>
 ## Normative status and operation domains
 <a id="normative-status-and-operation-domains"></a>
 
@@ -45,6 +46,20 @@ These domain statements concern finite JSON values within ordinary host
 memory, stack, execution, and cancellation limits. Host resource failure is
 not a patch or protocol verdict.
 
+<a id="portable-json"></a>
+## Optional portable JSON profile
+
+`paperfold/v1` and `paperfold/v2` MAY be exchanged under the additive
+[`paper-json-portable/v1` profile](https://github.com/urcades/paperdoll/blob/main/docs/spec.md#portable-json).
+The profile uses finite IEEE 754 binary64 numbers and limits every integral
+result to `-9007199254740991` through `9007199254740991`, inclusive. It applies
+to the complete patch, including array indices, kind multiplicity budgets,
+embedded bodies, and opaque element data. Profile conformance is separate from
+patch validity; it does not tighten either dialect or its schema. Exact larger
+integers belong in canonical decimal strings under a consumer-defined field
+contract.
+
+<a id="paperfold-v1-patch-document"></a>
 ## The patch document
 
 ```jsonc
@@ -63,6 +78,7 @@ endpoints `{ vessel, side }`; connections `{ from, to }`). An element's
 `body`, where present, must be a fully valid paper-doll/v3 body. An element's
 `data` is opaque: paperfold copies and compares it, and never reads it.
 
+<a id="paperfold-v1-entry-vocabulary"></a>
 ## The entry vocabulary: reification, by rule
 
 One entry shape per exported kernel operation — the pre-RFC's decision 2,
@@ -87,6 +103,7 @@ never omitted (micro-decision 7).
 
 ## Laws
 
+<a id="paperfold-v1-law-soundness"></a>
 ### Law 1 — Soundness
 
 `apply(a, diff(a, b)) = b` (in canonical form — see below), for any pair of
@@ -96,12 +113,14 @@ longest canonically equal `contains` prefix and suffix and replaces only the
 changed middle; it reifies `accepts` changes as vessel replacement.
 Minimality is a quality-of-implementation concern, never a law.
 
+<a id="paperfold-v1-law-composition"></a>
 ### Law 2 — Composition
 
 `compose(p, q)` is entry concatenation, and
 `apply(a, compose(p, q)) = apply(apply(a, p), q)`. Concatenation is
 associative, so composition of compositions is grouping-independent.
 
+<a id="paperfold-v1-law-partial-invertibility"></a>
 ### Law 3 — Partial invertibility
 
 For any patch `p` lawful at `a`: `apply(apply(a, p), invert(p)) = a`.
@@ -125,6 +144,7 @@ entry; one entry may invert to several:
 always be backed out; nothing is promised about applying `invert(p)` to
 bodies other than `apply(p, a)` — the staleness law refuses those.
 
+<a id="paperfold-v1-law-staleness"></a>
 ### Law 4 — Staleness (the integrity precondition)
 
 At apply time, every destruction record is checked against what the kernel
@@ -157,6 +177,7 @@ operational-transform/CRDT territory, deferred until a multiplayer co-editing
 consumer exists and the kernel's capacity question settles. paperfold/v1
 promises nothing about reordering entries or patches.
 
+<a id="paperfold-v1-application-semantics"></a>
 ## Application semantics
 
 `apply(body, patch)`:
@@ -176,6 +197,7 @@ promises nothing about reordering entries or patches.
    return the errors and no body: application is atomic by purity — inputs
    are never mutated, so a failed patch leaves nothing behind.
 
+<a id="paperfold-v1-canonical-form"></a>
 ## Canonical form
 
 The kernel's operations can leave semantically empty residue: clearing a
@@ -194,6 +216,7 @@ object-member order is ignored, array order is preserved, and empty
 `ports`/`contains` are normalized recursively. Connection equality ignores
 endpoint orientation.
 
+<a id="paperfold-v1-diff"></a>
 ## Diff
 
 `diff(a, b)` requires valid bodies, `a.root === b.root`, and unchanged root
@@ -335,6 +358,7 @@ scene layer's operation set as patch entries, so that change to a *scene* —
 bodies, kinds, and relations together — is a value with the same four laws.
 The v1 discipline is widened, not changed.
 
+<a id="paperfold-v2-scene-patch-document"></a>
 ## The scene patch document
 
 ```jsonc
@@ -374,6 +398,7 @@ segments — a bare body name is not an endpoint). paperfold restates none of
 paperchain's rules; it validates these fields to the same grammar and defers
 the laws to paperchain at apply time.
 
+<a id="paperfold-v2-destruction-records"></a>
 ## Destruction records over scenes
 
 `deleteKind`, `deleteBody`, and `removeRelation` carry what the paperchain
@@ -393,6 +418,7 @@ exactly as it was stored. (An `addRelation` entry's relation is trivially in
 stored orientation — paperchain stores it as written — so its inverse
 `removeRelation` needs no adjustment.)
 
+<a id="paperfold-v2-nested-body-paths"></a>
 ## Nested-body paths
 
 A kernel entry's optional `path` addresses an embedded body inside the named
@@ -410,6 +436,7 @@ missing vessel, a missing element, or an element that carries no body — was
 recorded against a different structure, and refuses the patch with a
 `stale patch: …` error naming the deepest failing prefix.
 
+<a id="paperfold-v2-laws"></a>
 ## Laws
 
 The four laws of v1, restated over scenes; nothing is added and nothing
@@ -438,6 +465,7 @@ weakened.
 
 Commutation remains absent, for v1's reasons.
 
+<a id="paperfold-v2-application-semantics"></a>
 ## Application semantics
 
 `applyScenePatch(scene, patch)`:
@@ -471,6 +499,7 @@ transaction story the pre-RFC promised (decision 4), now a law-level
 consequence rather than a convention — and `diffScenes` always emits such
 cleanup, so diffed patches never need hand-repair.
 
+<a id="paperfold-v2-canonical-form"></a>
 ## Canonical form over scenes
 
 A scene is canonical when every body (at the scene level and recursively
@@ -485,6 +514,7 @@ not stored-state equality. Kinds have no non-canonical spellings, and scene
 addresses are already canonical strings. `applyScenePatch` returns canonical
 scenes, and all staleness comparisons of bodies are canonical.
 
+<a id="paperfold-v2-diff"></a>
 ## Diff
 
 `diffScenes(a, b)` produces a sound patch by tracking a live intermediate

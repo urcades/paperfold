@@ -50,7 +50,7 @@ export type {
 
 export type { BodyName, KindDeclaration, KindId, Relation, Scene, SceneAddress } from "paperchain";
 
-export { formatProtocolErrors } from "paperdoll";
+export { MAX_PORTABLE_INTEGER, formatProtocolErrors, validatePortableJson } from "paperdoll";
 
 export type {
   Body,

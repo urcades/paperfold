@@ -103,10 +103,12 @@ Scene targeting is paperfold/v2 — see below.
 
 The protocol is the document format plus the laws in the current normative [`paperfold/v1 and paperfold/v2 specification`](docs/spec.md). [`schema/paperfold-v1.schema.json`](schema/paperfold-v1.schema.json) and [`schema/paperfold-v2.schema.json`](schema/paperfold-v2.schema.json) are structural JSON Schema (2020-12) companions, not complete specifications. Package versions and dependency floors are listed in the [`paper* family compatibility matrix`](https://github.com/urcades/paperdoll/blob/main/docs/family-compatibility.md). Any language can validate and apply paperfold documents against conforming paperdoll and paperchain implementations.
 
+The optional [`paper-json-portable/v1` profile](docs/spec.md#portable-json) limits integral binary64 values, including indices, budgets, and opaque nested data, to `±9007199254740991`. `validatePortableJson` checks that independent second verdict; larger exact integers should use canonical decimal strings under an application field contract.
+
 ## API
 
-- constants: `PAPERFOLD_PROTOCOL`
-- validation: `parsePatch`, `assertPatch`, `validatePatch`, `formatProtocolErrors` (re-exported from paperdoll)
+- constants: `PAPERFOLD_PROTOCOL`, `PAPERFOLD_SCENE_PROTOCOL`, `MAX_PORTABLE_INTEGER` (re-exported from paperdoll)
+- validation: `parsePatch`, `assertPatch`, `validatePatch`, `parseScenePatch`, `assertScenePatch`, `validateScenePatch`, `validatePortableJson`, `formatProtocolErrors` (portable helpers re-exported from paperdoll)
 - dynamics: `applyPatch`, `invertPatch`, `composePatches`, `diffBodies`
 - canonical form: `canonicalizeBody`
 - types: `PaperfoldDocument`, `PatchEntry` and the seven entry types, `VesselShape`, plus re-exported kernel types (`Body`, `Connection`, `ContainedElement`, `Endpoint`, `ProtocolError`, `Result`, `Side`, `Vessel`, `VesselId`)
